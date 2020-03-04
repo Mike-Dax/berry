@@ -1,0 +1,40 @@
+{
+  "name": "@yarnpkg/plugin-prebuilds",
+  "version": "2.0.0-rc.15",
+  "main": "./sources/index.ts",
+  "dependencies": {
+    "@yarnpkg/fslib": "workspace:^2.0.0-rc.16",
+    "@yarnpkg/libzip": "workspace:^2.0.0-rc.10",
+    "@yarnpkg/plugin-pack": "workspace:^2.0.0-rc.17"
+  },
+  "peerDependencies": {
+    "@yarnpkg/cli": "^2.0.0-rc.29",
+    "@yarnpkg/core": "^2.0.0-rc.23",
+    "@yarnpkg/plugin-essentials": "^2.0.0-rc.23"
+  },
+  "devDependencies": {
+    "@algolia/requester-common": "4.0.0-beta.14",
+    "@yarnpkg/builder": "workspace:^2.0.0-rc.19",
+    "@yarnpkg/cli": "workspace:^2.0.0-rc.29",
+    "@yarnpkg/core": "workspace:^2.0.0-rc.23",
+    "@yarnpkg/plugin-essentials": "workspace:^2.0.0-rc.23",
+    "typescript": "^3.7.5"
+  },
+  "scripts": {
+    "build:plugin-prebuilds": "builder build plugin",
+    "update-local": "yarn build:plugin-prebuilds && rsync -a --delete bundles/ bin/",
+    "postpack": "rm -rf lib",
+    "prepack": "run build:compile \"$(pwd)\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "ssh://git@github.com/yarnpkg/berry.git"
+  },
+  "publishConfig": {
+    "main": "./lib/index.js",
+    "typings": "./lib/index.d.ts"
+  },
+  "files": [
+    "/lib/**/*"
+  ]
+}
