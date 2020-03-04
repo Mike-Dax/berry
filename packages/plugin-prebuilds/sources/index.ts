@@ -1,7 +1,31 @@
-import {Hooks as CoreHooks,  Plugin, } from '@yarnpkg/core';
+import {Hooks as CoreHooks,  Plugin, SettingsType, SettingsDefinition } from '@yarnpkg/core';
 import {reduceDependency} from './add-prebuilt-dependencies'
 import { PrebuildFetcher } from './fetcher';
 import { PrebuildResolver } from './resolver';
+
+
+const prebuildSettings: {[name: string]: SettingsDefinition} = {
+  prebuildRuntime: {
+    description: `The runtime used, either 'electron' or 'node'`,
+    type: SettingsType.STRING,
+    default: null,
+  },
+  prebuildAbi: {
+    description: `The ABI of the runtime used.`,
+    type: SettingsType.STRING,
+    default: null,
+  },
+  prebuildTagPrefix: {
+    description: `The prebuild tag prefix`,
+    type: SettingsType.STRING,
+    default: `v`,
+  },
+  prebuildHostMirrorUrl: {
+    description: `The prebuild host mirror URL`,
+    type: SettingsType.STRING,
+    default: null,
+  },
+};
 
 const plugin: Plugin<CoreHooks> = {
   hooks: {
@@ -13,6 +37,20 @@ const plugin: Plugin<CoreHooks> = {
   resolvers: [
     PrebuildResolver,
   ],
+  configuration: {
+    ...prebuildSettings,
+    prebuildScopes: {
+      description: `Prebuild settings per package scope`,
+      type: SettingsType.MAP,
+      valueDefinition: {
+        description: ``,
+        type: SettingsType.SHAPE,
+        properties: {
+          ...prebuildSettings,
+        },
+      },
+    },
+  }
 };
 
 // eslint-disable-next-line arca/no-default-export

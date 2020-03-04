@@ -1,5 +1,7 @@
-import {Cache, structUtils, Locator, Descriptor, Ident, Project, ThrowReport, miscUtils, FetchOptions, Package} from '@yarnpkg/core';
+import {Cache, structUtils, Locator, Descriptor, Ident, Project, ThrowReport, miscUtils, FetchOptions, Package, MinimalLinkOptions, Configuration} from '@yarnpkg/core';
 import {npath, PortablePath, xfs, ppath, Filename, NodeFS}                                                      from '@yarnpkg/fslib';
+import { MapLike } from 'packages/plugin-npm/sources/npmConfigUtils';
+import { getAbi } from 'node-abi';
 
 export const getElectronVersion = async (project:Project) => {
   for (const pkg of project.storedPackages.values()) {
@@ -11,14 +13,14 @@ export const getElectronVersion = async (project:Project) => {
   return null
 }
 
-export const getNativeModuleVersion = async (project:Project, packageIdent: Ident, ident: Ident) => {
+export const getNativeModule = async (project:Project, packageIdent: Ident, ident: Ident) => {
   // we need to find the package that matches packageIdent which has a dependency on our ephemeral bindings package
   for (const pkg of project.storedPackages.values()) {
     // see if it matches packageIdent
     if (pkg.name === packageIdent.name && pkg.scope === packageIdent.scope) {
       //for (const [identHash, dependency] of pkg.dependencies) {
       //  if (dependency.name === "bindings") {
-          return pkg.version
+          return pkg
       //  }
       //}
     }
@@ -31,6 +33,72 @@ export function parseSpec(spec: string) {
   const payload = spec.substring(spec.indexOf("builtin<prebuild/") + 17, spec.length - 1);
   const packageIdent = structUtils.parseIdent(payload)
   return { packageIdent };
+}
+
+export function getPrebuildConfiguration(scope: string, configuration: Configuration): MapLike | null {
+  const prebuildScopedConfigurations: Map<string, MapLike> = configuration.get(`prebuildScopes`);
+
+  const exactEntry = prebuildScopedConfigurations.get(scope);
+  if (typeof exactEntry !== `undefined`)
+    return exactEntry;
+
+  return null;
+}
+
+export function gitRepositoryToGithubLink(repository: string) {
+  var m = /github\.com\/([^\/]+)\/([^\/\.]+)\.git/.exec(repository);
+  if (m) {
+    return 'https://github.com/' + m[1] + '/' + m[2];
+  }
+  return null
+}
+
+function getConfigEntry(nativeModule: Package, entry: string, opts: MinimalLinkOptions) {
+  const configuration = opts.project.configuration
+
+  const scopeWithAt = `@${nativeModule.scope}`
+
+  const scopedConfiguration = nativeModule.scope ? getPrebuildConfiguration(scopeWithAt, configuration) : null;
+
+  const effectiveConfiguration = scopedConfiguration || configuration;
+
+  if (effectiveConfiguration.get(entry)) {
+   return effectiveConfiguration.get(entry)
+  }
+
+  return configuration.get(entry)
+}
+
+export function getElectronABI(electronVersion: string): string {
+  return getAbi(electronVersion, 'electron')
+}
+
+export interface PrebuildCalculatedOptions {
+  runtime: string | "node" | "electron",
+  abi: string
+}
+
+export function getUrlOfPrebuild(githubLink: string, nativeModule: Package, opts: MinimalLinkOptions, prebuildOpts: PrebuildCalculatedOptions) {
+  const convertedName = structUtils.stringifyIdent(nativeModule).replace(/^@\w+\//, '')
+
+  const name = convertedName
+
+  const version = nativeModule.version!
+  const abi = prebuildOpts.abi
+  const runtime = prebuildOpts.runtime
+  const platform = process.platform
+  const arch = process.arch
+  const libc = process.env.LIBC || ''
+  const tag_prefix = getConfigEntry(nativeModule, `prebuildTagPrefix`, opts)
+
+  const packageName = `${name}-v${version}-${runtime}-v${abi}-${platform}${libc}-${arch}.tar.gz`
+  const hostMirrorUrl = getConfigEntry(nativeModule, `prebuildHostMirrorUrl`, opts)
+
+  if (hostMirrorUrl) {
+    return `${hostMirrorUrl}/${tag_prefix}${version}/${packageName}`
+  }
+
+  return `${githubLink}/releases/download/${tag_prefix}${version}/${packageName}`
 }
 
 /*
