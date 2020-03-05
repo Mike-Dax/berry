@@ -25,6 +25,11 @@ const prebuildSettings: {[name: string]: SettingsDefinition} = {
     type: SettingsType.STRING,
     default: null,
   },
+  prebuildHostMirrorTemplate: {
+    description: `The prebuild host mirror template`,
+    type: SettingsType.STRING,
+    default: `{mirror_url}/{tag_prefix}{version}/{name}-v{version}-{runtime}-v{abi}-{platform}{libc}-{arch}.tar.gz`,
+  },
 };
 
 const plugin: Plugin<CoreHooks> = {

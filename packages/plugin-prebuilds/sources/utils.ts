@@ -53,7 +53,7 @@ export function gitRepositoryToGithubLink(repository: string) {
   return null
 }
 
-function getConfigEntry(nativeModule: Package, entry: string, opts: MinimalLinkOptions) {
+function getConfigEntry<T>(nativeModule: Package, entry: string, opts: MinimalLinkOptions): T {
   const configuration = opts.project.configuration
 
   const scopeWithAt = `@${nativeModule.scope}`
@@ -78,6 +78,13 @@ export interface PrebuildCalculatedOptions {
   abi: string
 }
 
+function runTemplate(template:string, templateValues:{ [key: string]: string }) {
+  for (const [key, value] of Object.entries(templateValues)) {
+    template = template.replace(new RegExp(`{${key}}`, 'g'), value)
+  }
+  return template
+}
+
 export function getUrlOfPrebuild(githubLink: string, nativeModule: Package, opts: MinimalLinkOptions, prebuildOpts: PrebuildCalculatedOptions) {
   const convertedName = structUtils.stringifyIdent(nativeModule).replace(/^@\w+\//, '')
 
@@ -89,13 +96,29 @@ export function getUrlOfPrebuild(githubLink: string, nativeModule: Package, opts
   const platform = process.platform
   const arch = process.arch
   const libc = process.env.LIBC || ''
-  const tag_prefix = getConfigEntry(nativeModule, `prebuildTagPrefix`, opts)
+  const tag_prefix = getConfigEntry<string>(nativeModule, `prebuildTagPrefix`, opts)
 
   const packageName = `${name}-v${version}-${runtime}-v${abi}-${platform}${libc}-${arch}.tar.gz`
-  const hostMirrorUrl = getConfigEntry(nativeModule, `prebuildHostMirrorUrl`, opts)
+  const mirror_url = getConfigEntry<string>(nativeModule, `prebuildHostMirrorUrl`, opts)
 
-  if (hostMirrorUrl) {
-    return `${hostMirrorUrl}/${tag_prefix}${version}/${packageName}`
+  if (mirror_url) {
+    const template = getConfigEntry<string>(nativeModule, `prebuildHostMirrorTemplate`, opts)
+
+    return runTemplate(template, {
+      mirror_url,
+      name,
+      version,
+      abi,
+      runtime,
+      platform,
+      arch,
+      libc,
+      tag_prefix,
+      scope: nativeModule.scope || '',
+      scopeWithAt: nativeModule.scope ? `@${nativeModule.scope}` : '',
+      scopeWithAtAndSlash: nativeModule.scope ? `@${nativeModule.scope}/` : '',
+      scopeWithSlash: nativeModule.scope ? `${nativeModule.scope}/` : '',
+    })
   }
 
   return `${githubLink}/releases/download/${tag_prefix}${version}/${packageName}`
@@ -106,6 +129,8 @@ export function makeDescriptor(ident: Ident, {parentLocator, sourceDescriptor, p
   return structUtils.makeLocator(ident, makeSpec({parentLocator, sourceItem: sourceDescriptor, patchPaths}, structUtils.stringifyDescriptor));
 }
 
+https://github.com/serialport/node-serialport/releases/download/@serialport/bindings@8.0.7/bindings-v8.0.7-electron-v75-darwin-x64.tar.gz
+https://github.com/serialport/node-serialport/releases/download/@serialport/bindings@8.0.7/bindings-v8.0.7-electron-v76-darwin-x64.tar.gz
 
 
 type VisitPatchPathOptions<T> = {
