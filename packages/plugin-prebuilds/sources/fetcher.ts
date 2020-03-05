@@ -3,7 +3,7 @@ import {ReportError, MessageName, Resolver, ResolveOptions, MinimalResolveOption
 import {Descriptor, Locator}                                                                                          from '@yarnpkg/core';
 import {LinkType}                                                                                                     from '@yarnpkg/core';
 import {structUtils}                                                                                                  from '@yarnpkg/core';
-import {ppath, xfs, ZipFS, Filename, CwdFS}         from '@yarnpkg/fslib';
+import {ppath, xfs, ZipFS, Filename, CwdFS, PortablePath}         from '@yarnpkg/fslib';
 import {getLibzipPromise}                           from '@yarnpkg/libzip';
 import semver                                       from 'semver';
 
@@ -11,6 +11,7 @@ import * as utils                                   from './utils';
 import {PrebuildCalculatedOptions}                  from './utils';
 
 import { npmHttpUtils }                             from '@yarnpkg/plugin-npm';
+
 
 export class PrebuildFetcher implements Fetcher {
   supports(locator: Locator, opts: MinimalFetchOptions) {
@@ -55,7 +56,7 @@ export class PrebuildFetcher implements Fetcher {
       throw new ReportError(MessageName.UNNAMED, `Could not find the native module that had a prebuild attempt`);
     }
 
-    opts.report.reportInfo(MessageName.UNNAMED, `Fetching prebuild for ${structUtils.stringifyIdent(packageIdent)} version ${nativeModule.version} on runtime electron version ${electronVersion}`)
+    opts.report.reportInfo(MessageName.UNNAMED, `Fetching prebuild for ${structUtils.stringifyIdent(nativeModule)} version ${nativeModule.version} on runtime electron version ${electronVersion}`)
 
     if (nativeModule.version === null) {
       throw new ReportError(MessageName.UNNAMED, `Could not find the native module version that had a prebuild attempt`);
@@ -79,13 +80,13 @@ export class PrebuildFetcher implements Fetcher {
     const repository = data.repository?.url
 
     if (!repository) {
-      throw new ReportError(MessageName.UNNAMED, `Unable to find repository information for "${structUtils.stringifyIdent(packageIdent)}"`);
+      throw new ReportError(MessageName.UNNAMED, `Unable to find repository information for "${structUtils.stringifyIdent(nativeModule)}"`);
     }
 
     const githubUrl = utils.gitRepositoryToGithubLink(repository)
 
     if (!githubUrl) {
-      throw new ReportError(MessageName.UNNAMED, `Unable to find GitHub URL for "${structUtils.stringifyIdent(packageIdent)}"`);
+      throw new ReportError(MessageName.UNNAMED, `Unable to find GitHub URL for "${structUtils.stringifyIdent(nativeModule)}"`);
     }
 
     const prebuildOptions: PrebuildCalculatedOptions = {
@@ -95,7 +96,56 @@ export class PrebuildFetcher implements Fetcher {
 
     const prebuildUrl = utils.getUrlOfPrebuild(githubUrl, nativeModule, opts, prebuildOptions)
 
-    console.log(prebuildUrl)
+    const {
+      packageFs: prebuildPackageFs,
+      releaseFs: prebuildReleaseFs,
+      prefixPath: prebuildPrefixPath,
+      checksum: prebuildChecksum,
+    } = await opts.fetcher.fetch(structUtils.makeLocator(structUtils.makeIdent(`prebuilds`, `${structUtils.slugifyIdent(nativeModule)}-v${nativeModule.version}-${process.platform}-${process.arch}-${prebuildOptions.runtime}-${prebuildOptions.abi}`), prebuildUrl), opts)
+
+    opts.report.reportInfo(MessageName.UNNAMED, `Fetched prebuild for ${structUtils.stringifyIdent(nativeModule)} version ${nativeModule.version} on runtime electron version ${electronVersion}`)
+
+    console.log(
+      prebuildPrefixPath,
+      prebuildChecksum
+    )
+
+    // @serialport/bindings@
+
+    console.log(`Fetched prebuild successfully`)
+
+    // https://registry.eui.io/prebuilds/@serialport/bindings-v8.0.7-electron-v76-darwin-x64.tar.gz
+    // https://registry.eui.io/prebuilds/@serialport/bindings@8.0.7/bindings-v8.0.7-electron-v76-darwin-x64.tar.gz
+
+    const prebuildFs = new CwdFS(prebuildPrefixPath, {baseFs: prebuildPackageFs,});
+
+    const walk = async (currentPath: PortablePath, callback: (filepath: PortablePath) => Promise<void>) => {
+      const files = await prebuildFs.readdirPromise(currentPath)
+
+      await Promise.all(
+        files.map(async filename => {
+          const filepath = ppath.join(currentPath, filename)
+
+          const stat = await prebuildFs.statPromise(filepath)
+
+          if (stat.isDirectory()) {
+            await walk(filepath, callback)
+          } else if (stat.isFile()) {
+            await callback(filepath)
+          }
+        })
+      )
+    }
+
+    await walk('.' as PortablePath, async (filepath) => {
+      console.log("Found file in the prebuild tar", filepath)
+    })
+
+    if (prebuildReleaseFs) {
+      prebuildReleaseFs()
+    }
+
+    throw new Error()
 
     const tmpDir = await xfs.mktempPromise();
     const tmpFile = ppath.join(tmpDir, `prebuilt.zip` as Filename);
