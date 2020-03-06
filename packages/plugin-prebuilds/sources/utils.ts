@@ -1,5 +1,5 @@
 import {Cache, structUtils, Locator, Descriptor, Ident, Project, ThrowReport, miscUtils, FetchOptions, Package, MinimalLinkOptions, Configuration} from '@yarnpkg/core';
-import {npath, PortablePath, xfs, ppath, Filename, NodeFS}                                                      from '@yarnpkg/fslib';
+import {npath, PortablePath, xfs, ppath, Filename, NodeFS, CwdFS, FakeFS}                                                      from '@yarnpkg/fslib';
 import { MapLike } from 'packages/plugin-npm/sources/npmConfigUtils';
 import { getAbi } from 'node-abi';
 
@@ -122,6 +122,32 @@ export function getUrlOfPrebuild(githubLink: string, nativeModule: Package, opts
   }
 
   return `${githubLink}/releases/download/${tag_prefix}${version}/${packageName}`
+}
+
+export const walk = async (filesystem: FakeFS<PortablePath>, currentPath: PortablePath, callback: (filesystem: FakeFS<PortablePath>, filepath: PortablePath) => Promise<void>, cancellationSignal: { cancel: boolean }) => {
+  if (cancellationSignal.cancel) {
+    return
+  }
+
+  const files = await filesystem.readdirPromise(currentPath)
+
+  await Promise.all(
+    files.map(async filename => {
+      if (cancellationSignal.cancel) {
+        return
+      }
+
+      const filepath = ppath.join(currentPath, filename)
+
+      const stat = await filesystem.statPromise(filepath)
+
+      if (stat.isDirectory()) {
+        await walk(filesystem, filepath, callback, cancellationSignal)
+      } else if (stat.isFile()) {
+        await callback(filesystem, filepath)
+      }
+    })
+  )
 }
 
 /*
