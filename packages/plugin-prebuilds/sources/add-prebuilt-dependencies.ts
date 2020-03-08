@@ -10,13 +10,13 @@ export const reduceDependency = async (
   extra: {resolver: Resolver, resolveOptions: ResolveOptions},
 ) => {
   if (dependency.name === 'bindings' && dependency.scope === null) {
-    extra.resolveOptions.report.reportInfo(MessageName.UNNAMED, `Found a bindings dependency in ${locator.name}, re-routing to prebuild.`)
+    extra.resolveOptions.report.reportInfo(MessageName.UNNAMED, `Found a bindings dependency in ${structUtils.stringifyIdent(locator)}, re-routing to prebuild.`)
 
-    const selector = `builtin<prebuild/${structUtils.stringifyIdent(locator)}>`
+    const selector = `builtin<prebuild/${structUtils.stringifyIdent(locator)}>` // TODO: Add process.platform and arch to this
 
     return structUtils.makeDescriptor(dependency, structUtils.makeRange({
       protocol: `prebuild:`,
-      source: `prebuilt-bindings-${structUtils.slugifyIdent(locator)}`,
+      source: `bindings<${structUtils.slugifyIdent(locator)}>${process.platform}-${process.arch}`,
       selector,
       params: null,
     }));
