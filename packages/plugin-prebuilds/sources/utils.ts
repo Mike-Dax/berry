@@ -1,7 +1,10 @@
 import {Cache, structUtils, Locator, Descriptor, Ident, Project, ThrowReport, miscUtils, FetchOptions, Package, MinimalLinkOptions, Configuration} from '@yarnpkg/core';
+import {ReportError, MessageName, Resolver, ResolveOptions, MinimalResolveOptions, Manifest, DescriptorHash} from '@yarnpkg/core';
+
 import {npath, PortablePath, xfs, ppath, Filename, NodeFS, CwdFS, FakeFS}                                                      from '@yarnpkg/fslib';
 import { MapLike } from 'packages/plugin-npm/sources/npmConfigUtils';
 import { getAbi } from 'node-abi';
+import { npmHttpUtils }                             from '@yarnpkg/plugin-npm';
 
 export const getElectronVersion = async (project:Project) => {
   for (const pkg of project.storedPackages.values()) {
@@ -85,7 +88,38 @@ function runTemplate(template:string, templateValues:{ [key: string]: string }) 
   return template
 }
 
-export function getUrlOfPrebuild(githubLink: string, nativeModule: Package, opts: MinimalLinkOptions, prebuildOpts: PrebuildCalculatedOptions) {
+async function getGithubLink(nativeModule: Package, opts: MinimalLinkOptions) {
+  const registryData = await npmHttpUtils.get(npmHttpUtils.getIdentUrl(nativeModule), {
+    configuration: opts.project.configuration,
+    ident: nativeModule,
+    json: true,
+  });
+
+  if (!Object.prototype.hasOwnProperty.call(registryData, `versions`)) {
+    throw new ReportError(MessageName.REMOTE_INVALID, `Registry returned invalid data for - missing "versions" field`);
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(registryData.versions, nativeModule!.version!)) {
+    throw new ReportError(MessageName.REMOTE_NOT_FOUND, `Registry failed to return reference "${nativeModule.version}"`);
+  }
+
+  const data = registryData.versions[nativeModule!.version!]
+  const repository = data.repository?.url
+
+  if (!repository) {
+    throw new ReportError(MessageName.UNNAMED, `Unable to find repository information for "${structUtils.stringifyIdent(nativeModule)}"`);
+  }
+
+  const githubUrl = gitRepositoryToGithubLink(repository)
+
+  if (!githubUrl) {
+    throw new ReportError(MessageName.UNNAMED, `Unable to find GitHub URL for "${structUtils.stringifyIdent(nativeModule)}"`);
+  }
+
+  return githubUrl
+}
+
+export async function getUrlOfPrebuild(nativeModule: Package, opts: MinimalLinkOptions, prebuildOpts: PrebuildCalculatedOptions) {
   const convertedName = structUtils.stringifyIdent(nativeModule).replace(/^@\w+\//, '')
 
   const name = convertedName
@@ -120,6 +154,8 @@ export function getUrlOfPrebuild(githubLink: string, nativeModule: Package, opts
       scopeWithSlash: nativeModule.scope ? `${nativeModule.scope}/` : '',
     })
   }
+
+  const githubLink = await getGithubLink(nativeModule, opts)
 
   return `${githubLink}/releases/download/${tag_prefix}${version}/${packageName}`
 }

@@ -1,4 +1,4 @@
-import {Fetcher, FetchOptions, MinimalFetchOptions, miscUtils} from '@yarnpkg/core';
+import {Fetcher, FetchOptions, MinimalFetchOptions, miscUtils, FetchResult} from '@yarnpkg/core';
 import {ReportError, MessageName, Resolver, ResolveOptions, MinimalResolveOptions, Manifest, DescriptorHash, Package} from '@yarnpkg/core';
 import {Descriptor, Locator}                                                                                          from '@yarnpkg/core';
 import {LinkType}                                                                                                     from '@yarnpkg/core';
@@ -10,7 +10,6 @@ import semver                                       from 'semver';
 import * as utils                                   from './utils';
 import {PrebuildCalculatedOptions}                  from './utils';
 
-import { npmHttpUtils }                             from '@yarnpkg/plugin-npm';
 
 
 export class PrebuildFetcher implements Fetcher {
@@ -50,43 +49,15 @@ export class PrebuildFetcher implements Fetcher {
     const { packageIdent } = utils.parseSpec(locator.reference);
 
     const electronVersion = await utils.getElectronVersion(opts.project)
+
     const nativeModule = await utils.getNativeModule(opts.project, packageIdent, locator)
 
     if (nativeModule === null) {
       throw new ReportError(MessageName.UNNAMED, `Could not find the native module that had a prebuild attempt`);
     }
 
-    opts.report.reportInfo(MessageName.UNNAMED, `Fetching prebuild for ${structUtils.stringifyIdent(nativeModule)} version ${nativeModule.version} on runtime electron version ${electronVersion}`)
-
     if (nativeModule.version === null) {
       throw new ReportError(MessageName.UNNAMED, `Could not find the native module version that had a prebuild attempt`);
-    }
-
-    const registryData = await npmHttpUtils.get(npmHttpUtils.getIdentUrl(nativeModule), {
-      configuration: opts.project.configuration,
-      ident: locator,
-      json: true,
-    });
-
-    if (!Object.prototype.hasOwnProperty.call(registryData, `versions`)) {
-      throw new ReportError(MessageName.REMOTE_INVALID, `Registry returned invalid data for - missing "versions" field`);
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(registryData.versions, nativeModule.version)) {
-      throw new ReportError(MessageName.REMOTE_NOT_FOUND, `Registry failed to return reference "${nativeModule.version}"`);
-    }
-
-    const data = registryData.versions[nativeModule.version]
-    const repository = data.repository?.url
-
-    if (!repository) {
-      throw new ReportError(MessageName.UNNAMED, `Unable to find repository information for "${structUtils.stringifyIdent(nativeModule)}"`);
-    }
-
-    const githubUrl = utils.gitRepositoryToGithubLink(repository)
-
-    if (!githubUrl) {
-      throw new ReportError(MessageName.UNNAMED, `Unable to find GitHub URL for "${structUtils.stringifyIdent(nativeModule)}"`);
     }
 
     const prebuildOptions: PrebuildCalculatedOptions = {
@@ -94,10 +65,17 @@ export class PrebuildFetcher implements Fetcher {
       runtime: electronVersion ? 'electron' : 'node'
     }
 
-    const prebuildUrl = utils.getUrlOfPrebuild(githubUrl, nativeModule, opts, prebuildOptions)
-    const prebuildPackage = await opts.fetcher.fetch(structUtils.makeLocator(structUtils.makeIdent(`prebuilds`, `${structUtils.slugifyIdent(nativeModule)}-v${nativeModule.version}-${process.platform}-${process.arch}-${prebuildOptions.runtime}-${prebuildOptions.abi}`), prebuildUrl), opts)
+    const prebuildUrl = await utils.getUrlOfPrebuild(nativeModule, opts, prebuildOptions)
 
-    opts.report.reportInfo(MessageName.UNNAMED, `Fetched prebuild for ${structUtils.stringifyIdent(nativeModule)} version ${nativeModule.version} on runtime electron version ${electronVersion}`)
+    let prebuildPackage: FetchResult
+    try {
+      prebuildPackage = await opts.fetcher.fetch(structUtils.makeLocator(structUtils.makeIdent(`prebuilds`, `${structUtils.slugifyIdent(nativeModule)}-v${nativeModule.version}-${process.platform}-${process.arch}-${prebuildOptions.runtime}-${prebuildOptions.abi}`), prebuildUrl), opts)
+    } catch (e) {
+      opts.report.reportInfo(MessageName.UNNAMED, `Error fetching ${prebuildUrl}`)
+      throw e
+    }
+
+    // opts.report.reportInfo(MessageName.UNNAMED, `Fetched prebuild for ${structUtils.stringifyIdent(nativeModule)} version ${nativeModule.version} on runtime electron version ${electronVersion}`)
 
     const cancellationSignal = { cancel: false }
     let nodeContents: Buffer | null = null
@@ -128,7 +106,6 @@ export class PrebuildFetcher implements Fetcher {
     await zipPackage.mkdirpPromise(prefixPath);
 
     const generatedPackage = new CwdFS(prefixPath, {baseFs: zipPackage});
-
 
     // Write our package.json
     await generatedPackage.writeJsonPromise('package.json' as Filename, {
