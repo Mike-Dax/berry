@@ -48,10 +48,11 @@ export abstract class AbstractPnpInstaller implements Installer {
       ? await this.getBuildScripts(pkg, manifest, fetchResult)
       : [];
 
-    if (buildScripts.length > 0 && !this.opts.project.configuration.get(`enableScripts`)) {
-      this.opts.report.reportWarningOnce(MessageName.DISABLED_BUILD_SCRIPTS, `${structUtils.prettyLocator(this.opts.project.configuration, pkg)} lists build scripts, but all build scripts have been disabled.`);
+    if (buildScripts.length > 0 && !this.opts.project.configuration.get(`enableScripts`))
+      // PATCH DIFFERENCE BETWEEN EUI YARN AND MASTER
+      // this.opts.report.reportWarningOnce(MessageName.DISABLED_BUILD_SCRIPTS, `${structUtils.prettyLocator(this.opts.project.configuration, pkg)} lists build scripts, but all build scripts have been disabled.`);
       buildScripts.length = 0;
-    }
+
 
     if (buildScripts.length > 0 && pkg.linkType !== LinkType.HARD && !this.opts.project.tryWorkspaceByLocator(pkg)) {
       this.opts.report.reportWarningOnce(MessageName.SOFT_LINK_BUILD, `${structUtils.prettyLocator(this.opts.project.configuration, pkg)} lists build scripts, but is referenced through a soft link. Soft links don't support build scripts, so they'll be ignored.`);
