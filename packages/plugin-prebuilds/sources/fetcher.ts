@@ -1,14 +1,8 @@
-import {Fetcher, FetchOptions, MinimalFetchOptions, miscUtils, FetchResult}                                           from '@yarnpkg/core';
-import {ReportError, MessageName, Resolver, ResolveOptions, MinimalResolveOptions, Manifest, DescriptorHash, Package} from '@yarnpkg/core';
-import {Descriptor, Locator}                                                                                          from '@yarnpkg/core';
-import {LinkType}                                                                                                     from '@yarnpkg/core';
-import {structUtils}                                                                                                  from '@yarnpkg/core';
-import {ppath, xfs, ZipFS, Filename, CwdFS, PortablePath, FakeFS}                                                     from '@yarnpkg/fslib';
-import {getLibzipPromise}                                                                                             from '@yarnpkg/libzip';
-import semver                                                                                                         from 'semver';
+import {Fetcher, structUtils, FetchOptions, MinimalFetchOptions, miscUtils, FetchResult, ReportError, MessageName, Locator} from '@yarnpkg/core';
+import {ppath, xfs, ZipFS, Filename, CwdFS, PortablePath}                                                                   from '@yarnpkg/fslib';
+import {getLibzipPromise}                                                                                                   from '@yarnpkg/libzip';
 
-import * as utils                                                                                                     from './utils';
-import {PrebuildCalculatedOptions}                                                                                    from './utils';
+import * as utils                                                                                                           from './utils';
 
 
 export class PrebuildFetcher implements Fetcher {
@@ -63,7 +57,7 @@ export class PrebuildFetcher implements Fetcher {
       throw new ReportError(MessageName.UNNAMED, `Could not find the native module version that had a prebuild attempt`);
 
 
-    const prebuildOptions: PrebuildCalculatedOptions = {
+    const prebuildOptions: utils.PrebuildCalculatedOptions = {
       abi: electronVersion ? utils.getElectronABI(electronVersion) : process.versions.modules,
       runtime: electronVersion ? `electron` : `node`,
     };
@@ -122,8 +116,6 @@ export class PrebuildFetcher implements Fetcher {
 
 const staticRequire = require("./bindings.node");
 module.exports = (fileLookingFor) => {
-  console.log("was looking for file", fileLookingFor, "but we replaced it!");
-
   return staticRequire;
 };
     `;

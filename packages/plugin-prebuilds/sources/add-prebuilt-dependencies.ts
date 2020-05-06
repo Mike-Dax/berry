@@ -1,5 +1,4 @@
-import {Descriptor, Project, Locator, Resolver, ResolveOptions, MessageName} from '@yarnpkg/core';
-import {structUtils}                                                         from '@yarnpkg/core';
+import {Descriptor, Project, Locator, Resolver, ResolveOptions, MessageName, structUtils} from '@yarnpkg/core';
 
 
 export const reduceDependency = async (
@@ -10,7 +9,7 @@ export const reduceDependency = async (
   extra: {resolver: Resolver, resolveOptions: ResolveOptions},
 ) => {
   if (dependency.name === `bindings` && dependency.scope === null) {
-    extra.resolveOptions.report.reportInfo(MessageName.UNNAMED, `Found a bindings dependency in ${structUtils.stringifyIdent(locator)}, re-routing to prebuild.`);
+    // extra.resolveOptions.report.reportInfo(MessageName.UNNAMED, `Found a bindings dependency in ${structUtils.stringifyIdent(locator)}, re-routing to prebuild.`);
 
     const selector = `builtin<prebuild/${structUtils.stringifyIdent(locator)}>`; // TODO: Add process.platform and arch to this
 

@@ -1,10 +1,9 @@
-import {ReportError, MessageName, Resolver, ResolveOptions, MinimalResolveOptions, Manifest, DescriptorHash}                                       from '@yarnpkg/core';
-import {Cache, structUtils, Locator, Descriptor, Ident, Project, ThrowReport, miscUtils, FetchOptions, Package, MinimalLinkOptions, Configuration} from '@yarnpkg/core';
+import {structUtils, ReportError, MessageName, Ident, Project,  Package, MinimalLinkOptions, Configuration} from '@yarnpkg/core';
+import {PortablePath,  ppath, FakeFS}                                                                       from '@yarnpkg/fslib';
+import {npmHttpUtils}                                                                                       from '@yarnpkg/plugin-npm';
+import {getAbi}                                                                                             from 'node-abi';
+import {MapLike}                                                                                            from 'packages/plugin-npm/sources/npmConfigUtils';
 
-import {npath, PortablePath, xfs, ppath, Filename, NodeFS, CwdFS, FakeFS}                                                                          from '@yarnpkg/fslib';
-import {npmHttpUtils}                                                                                                                              from '@yarnpkg/plugin-npm';
-import {getAbi}                                                                                                                                    from 'node-abi';
-import {MapLike}                                                                                                                                   from 'packages/plugin-npm/sources/npmConfigUtils';
 
 export const getElectronVersion = async (project: Project) => {
   for (const pkg of project.storedPackages.values()) {
@@ -130,16 +129,20 @@ export async function getUrlOfPrebuild(nativeModule: Package, opts: MinimalLinkO
   const platform = process.platform;
   const arch = process.arch;
   const libc = process.env.LIBC || ``;
-  const tagPrefix = getConfigEntry<string>(nativeModule, `prebuildTagPrefix`, opts);
+  // eslint-disable-next-line @typescript-eslint/camelcase
+  const tag_prefix = getConfigEntry<string>(nativeModule, `prebuildTagPrefix`, opts);
 
   const packageName = `${name}-v${version}-${runtime}-v${abi}-${platform}${libc}-${arch}.tar.gz`;
-  const mirrorUrl = getConfigEntry<string>(nativeModule, `prebuildHostMirrorUrl`, opts);
+  // eslint-disable-next-line @typescript-eslint/camelcase
+  const mirror_url = getConfigEntry<string>(nativeModule, `prebuildHostMirrorUrl`, opts);
 
-  if (mirrorUrl) {
+  // eslint-disable-next-line @typescript-eslint/camelcase
+  if (mirror_url) {
     const template = getConfigEntry<string>(nativeModule, `prebuildHostMirrorTemplate`, opts);
 
     return runTemplate(template, {
-      mirrorUrl,
+      // eslint-disable-next-line @typescript-eslint/camelcase
+      mirror_url,
       name,
       version,
       abi,
@@ -147,7 +150,8 @@ export async function getUrlOfPrebuild(nativeModule: Package, opts: MinimalLinkO
       platform,
       arch,
       libc,
-      tagPrefix,
+      // eslint-disable-next-line @typescript-eslint/camelcase
+      tag_prefix,
       scope: nativeModule.scope || ``,
       scopeWithAt: nativeModule.scope ? `@${nativeModule.scope}` : ``,
       scopeWithAtAndSlash: nativeModule.scope ? `@${nativeModule.scope}/` : ``,
@@ -157,7 +161,8 @@ export async function getUrlOfPrebuild(nativeModule: Package, opts: MinimalLinkO
 
   const githubLink = await getGithubLink(nativeModule, opts);
 
-  return `${githubLink}/releases/download/${tagPrefix}${version}/${packageName}`;
+  // eslint-disable-next-line @typescript-eslint/camelcase
+  return `${githubLink}/releases/download/${tag_prefix}${version}/${packageName}`;
 }
 
 export const walk = async (filesystem: FakeFS<PortablePath>, currentPath: PortablePath, callback: (filesystem: FakeFS<PortablePath>, filepath: PortablePath) => Promise<void>, cancellationSignal: { cancel: boolean }) => {

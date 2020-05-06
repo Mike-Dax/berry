@@ -1,8 +1,5 @@
-import {Resolver, ResolveOptions, MinimalResolveOptions, DescriptorHash, hashUtils, MessageName, LinkType} from '@yarnpkg/core';
-import {Descriptor, Locator, Package}                                                                      from '@yarnpkg/core';
-import {structUtils}                                                                                       from '@yarnpkg/core';
+import {Descriptor, Locator, Package, Resolver, ResolveOptions, MinimalResolveOptions, DescriptorHash, LinkType, structUtils} from '@yarnpkg/core';
 
-import * as utils                                                                                          from './utils';
 
 export class PrebuildResolver implements Resolver {
   supportsDescriptor(descriptor: Descriptor, opts: MinimalResolveOptions) {

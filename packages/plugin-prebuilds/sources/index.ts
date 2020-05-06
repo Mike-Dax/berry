@@ -1,8 +1,8 @@
-import {Hooks as CoreHooks,  Plugin, SettingsType, SettingsDefinition} from '@yarnpkg/core';
+import {Hooks as CoreHooks, Plugin, SettingsType, SettingsDefinition} from '@yarnpkg/core';
 
-import {reduceDependency}                                              from './add-prebuilt-dependencies';
-import {PrebuildFetcher}                                               from './fetcher';
-import {PrebuildResolver}                                              from './resolver';
+import {reduceDependency}                                             from './add-prebuilt-dependencies';
+import {PrebuildFetcher}                                              from './fetcher';
+import {PrebuildResolver}                                             from './resolver';
 
 
 const prebuildSettings: {[name: string]: SettingsDefinition} = {
