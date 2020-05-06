@@ -1,15 +1,14 @@
-import {Fetcher, FetchOptions, MinimalFetchOptions, miscUtils, FetchResult} from '@yarnpkg/core';
+import {Fetcher, FetchOptions, MinimalFetchOptions, miscUtils, FetchResult}                                           from '@yarnpkg/core';
 import {ReportError, MessageName, Resolver, ResolveOptions, MinimalResolveOptions, Manifest, DescriptorHash, Package} from '@yarnpkg/core';
 import {Descriptor, Locator}                                                                                          from '@yarnpkg/core';
 import {LinkType}                                                                                                     from '@yarnpkg/core';
 import {structUtils}                                                                                                  from '@yarnpkg/core';
-import {ppath, xfs, ZipFS, Filename, CwdFS, PortablePath, FakeFS}         from '@yarnpkg/fslib';
-import {getLibzipPromise}                           from '@yarnpkg/libzip';
-import semver                                       from 'semver';
+import {ppath, xfs, ZipFS, Filename, CwdFS, PortablePath, FakeFS}                                                     from '@yarnpkg/fslib';
+import {getLibzipPromise}                                                                                             from '@yarnpkg/libzip';
+import semver                                                                                                         from 'semver';
 
-import * as utils                                   from './utils';
-import {PrebuildCalculatedOptions}                  from './utils';
-
+import * as utils                                                                                                     from './utils';
+import {PrebuildCalculatedOptions}                                                                                    from './utils';
 
 
 export class PrebuildFetcher implements Fetcher {
@@ -25,15 +24,19 @@ export class PrebuildFetcher implements Fetcher {
   }
 
   async fetch(locator: Locator, opts: FetchOptions) {
-    const expectedChecksum = null // opts.checksums.get(locator.locatorHash) || null;
+    const expectedChecksum = null; // opts.checksums.get(locator.locatorHash) || null;
 
     const [packageFs, releaseFs, checksum] = await opts.cache.fetchPackageFromCache(
       locator,
       expectedChecksum,
-      async () => {
-        opts.report.reportInfoOnce(MessageName.FETCH_NOT_CACHED, `${structUtils.prettyLocator(opts.project.configuration, locator)} can't be found in the cache and will be fetched from the registry`);
-        return await this.fetchPrebuild(locator, opts);
-      },
+      {
+        onHit: () => opts.report.reportCacheHit(locator),
+        onMiss: () => opts.report.reportCacheMiss(locator),
+        loader: () => {
+          // opts.report.reportInfoOnce(MessageName.FETCH_NOT_CACHED, `${structUtils.prettyLocator(opts.project.configuration, locator)} can't be found in the cache and will be fetched from the registry`);
+          return this.fetchPrebuild(locator, opts);
+        },
+      }
     );
 
     return {
@@ -46,55 +49,55 @@ export class PrebuildFetcher implements Fetcher {
   }
 
   private async fetchPrebuild(locator: Locator, opts: FetchOptions) {
-    const { packageIdent } = utils.parseSpec(locator.reference);
+    const {packageIdent} = utils.parseSpec(locator.reference);
 
-    const electronVersion = await utils.getElectronVersion(opts.project)
+    const electronVersion = await utils.getElectronVersion(opts.project);
 
-    const nativeModule = await utils.getNativeModule(opts.project, packageIdent, locator)
+    const nativeModule = await utils.getNativeModule(opts.project, packageIdent, locator);
 
-    if (nativeModule === null) {
+    if (nativeModule === null)
       throw new ReportError(MessageName.UNNAMED, `Could not find the native module that had a prebuild attempt`);
-    }
 
-    if (nativeModule.version === null) {
+
+    if (nativeModule.version === null)
       throw new ReportError(MessageName.UNNAMED, `Could not find the native module version that had a prebuild attempt`);
-    }
+
 
     const prebuildOptions: PrebuildCalculatedOptions = {
       abi: electronVersion ? utils.getElectronABI(electronVersion) : process.versions.modules,
-      runtime: electronVersion ? 'electron' : 'node'
-    }
+      runtime: electronVersion ? `electron` : `node`,
+    };
 
-    const prebuildUrl = await utils.getUrlOfPrebuild(nativeModule, opts, prebuildOptions)
+    const prebuildUrl = await utils.getUrlOfPrebuild(nativeModule, opts, prebuildOptions);
 
-    let prebuildPackage: FetchResult
+    let prebuildPackage: FetchResult;
     try {
-      prebuildPackage = await opts.fetcher.fetch(structUtils.makeLocator(structUtils.makeIdent(`prebuilds`, `${structUtils.slugifyIdent(nativeModule)}-v${nativeModule.version}-${process.platform}-${process.arch}-${prebuildOptions.runtime}-${prebuildOptions.abi}`), prebuildUrl), opts)
+      prebuildPackage = await opts.fetcher.fetch(structUtils.makeLocator(structUtils.makeIdent(`prebuilds`, `${structUtils.slugifyIdent(nativeModule)}-v${nativeModule.version}-${process.platform}-${process.arch}-${prebuildOptions.runtime}-${prebuildOptions.abi}`), prebuildUrl), opts);
     } catch (e) {
-      opts.report.reportInfo(MessageName.UNNAMED, `Error fetching ${prebuildUrl}`)
-      throw e
+      opts.report.reportInfo(MessageName.UNNAMED, `Error fetching ${prebuildUrl}`);
+      throw e;
     }
 
     // opts.report.reportInfo(MessageName.UNNAMED, `Fetched prebuild for ${structUtils.stringifyIdent(nativeModule)} version ${nativeModule.version} on runtime electron version ${electronVersion}`)
 
-    const cancellationSignal = { cancel: false }
-    let nodeContents: Buffer | null = null
-    let bindingsLocation = ""
+    const cancellationSignal = {cancel: false};
+    let nodeContents: Buffer | null = null;
+    let bindingsLocation = ``;
 
     // Walk the downloaded prebuild directory, find the file
     await miscUtils.releaseAfterUseAsync(async () => {
-      await utils.walk(prebuildPackage.packageFs, '.' as PortablePath, async (filesystem, filepath) => {
-        nodeContents = await filesystem.readFilePromise(filepath)
-        bindingsLocation = filepath
+      await utils.walk(prebuildPackage.packageFs, `.` as PortablePath, async (filesystem, filepath) => {
+        nodeContents = await filesystem.readFilePromise(filepath);
+        bindingsLocation = filepath;
 
         // send the break signal
-        cancellationSignal.cancel = true
-      }, cancellationSignal)
-    }, prebuildPackage.releaseFs)
+        cancellationSignal.cancel = true;
+      }, cancellationSignal);
+    }, prebuildPackage.releaseFs);
 
-    if (nodeContents === null) {
+    if (nodeContents === null)
       throw new ReportError(MessageName.UNNAMED, `Was unable to find node file in prebuild package for "${structUtils.stringifyIdent(nativeModule)}"`);
-    }
+
 
     const tmpDir = await xfs.mktempPromise();
     const tmpFile = ppath.join(tmpDir, `prebuilt.zip` as Filename);
@@ -108,10 +111,10 @@ export class PrebuildFetcher implements Fetcher {
     const generatedPackage = new CwdFS(prefixPath, {baseFs: zipPackage});
 
     // Write our package.json
-    await generatedPackage.writeJsonPromise('package.json' as Filename, {
+    await generatedPackage.writeJsonPromise(`package.json` as Filename, {
       name: structUtils.slugifyLocator(locator),
-      main: "./index.js"
-    })
+      main: `./index.js`,
+    });
 
     // write our index.js
     const templateIndex = `// Automatically generated bindings file
@@ -123,11 +126,11 @@ module.exports = (fileLookingFor) => {
 
   return staticRequire;
 };
-    `
-    await generatedPackage.writeFilePromise('index.js' as Filename, templateIndex)
+    `;
+    await generatedPackage.writeFilePromise(`index.js` as Filename, templateIndex);
 
     // Write the file into the generated package
-    await generatedPackage.writeFilePromise('bindings.node' as Filename, nodeContents)
+    await generatedPackage.writeFilePromise(`bindings.node` as Filename, nodeContents);
 
     return zipPackage;
   }

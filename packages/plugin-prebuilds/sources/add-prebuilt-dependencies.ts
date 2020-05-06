@@ -1,5 +1,5 @@
 import {Descriptor, Project, Locator, Resolver, ResolveOptions, MessageName} from '@yarnpkg/core';
-import {structUtils}                                            from '@yarnpkg/core';
+import {structUtils}                                                         from '@yarnpkg/core';
 
 
 export const reduceDependency = async (
@@ -9,10 +9,10 @@ export const reduceDependency = async (
   initialDependency: Descriptor,
   extra: {resolver: Resolver, resolveOptions: ResolveOptions},
 ) => {
-  if (dependency.name === 'bindings' && dependency.scope === null) {
-    extra.resolveOptions.report.reportInfo(MessageName.UNNAMED, `Found a bindings dependency in ${structUtils.stringifyIdent(locator)}, re-routing to prebuild.`)
+  if (dependency.name === `bindings` && dependency.scope === null) {
+    extra.resolveOptions.report.reportInfo(MessageName.UNNAMED, `Found a bindings dependency in ${structUtils.stringifyIdent(locator)}, re-routing to prebuild.`);
 
-    const selector = `builtin<prebuild/${structUtils.stringifyIdent(locator)}>` // TODO: Add process.platform and arch to this
+    const selector = `builtin<prebuild/${structUtils.stringifyIdent(locator)}>`; // TODO: Add process.platform and arch to this
 
     return structUtils.makeDescriptor(dependency, structUtils.makeRange({
       protocol: `prebuild:`,
@@ -22,5 +22,5 @@ export const reduceDependency = async (
     }));
   }
 
-  return dependency
-}
+  return dependency;
+};
