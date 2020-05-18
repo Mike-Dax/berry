@@ -1,12 +1,10 @@
-import {Descriptor, Project, Locator, Resolver, ResolveOptions, MessageName, structUtils} from '@yarnpkg/core';
+import {Descriptor, Project, Locator, structUtils} from '@yarnpkg/core';
 
 
 export const reduceDependency = async (
   dependency: Descriptor,
   project: Project,
   locator: Locator,
-  initialDependency: Descriptor,
-  extra: {resolver: Resolver, resolveOptions: ResolveOptions},
 ) => {
   if (dependency.name === `bindings` && dependency.scope === null) {
     // extra.resolveOptions.report.reportInfo(MessageName.UNNAMED, `Found a bindings dependency in ${structUtils.stringifyIdent(locator)}, re-routing to prebuild.`);

@@ -32,7 +32,7 @@ export class NpmSemverFetcher implements Fetcher {
 
     const [packageFs, releaseFs, checksum] = await opts.cache.fetchPackageFromCache(locator, expectedChecksum, {
       onHit: () => opts.report.reportCacheHit(locator),
-      onMiss: () => opts.report.reportCacheMiss(locator),
+      onMiss: () => opts.report.reportCacheMiss(locator, `${structUtils.prettyLocator(opts.project.configuration, locator)} will be fetched from the registry`),
       loader: () => this.fetchFromNetwork(locator, opts),
     });
 
