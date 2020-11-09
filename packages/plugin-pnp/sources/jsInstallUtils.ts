@@ -27,6 +27,8 @@ export type ExtractBuildScriptDataRequirements = ManifestCompatibilityDataRequir
 };
 
 export function extractBuildScripts(pkg: Package, requirements: ExtractBuildScriptDataRequirements, dependencyMeta: DependencyMeta, {configuration, report}: {configuration: Configuration, report?: Report | null}) {
+  // FORK CHANGE, DON'T PRINT BUILD SCRIPT WARNINGS
+  return [];
   const buildScripts: Array<BuildDirective> = [];
 
   for (const scriptName of [`preinstall`, `install`, `postinstall`])
