@@ -44,6 +44,21 @@ export async function fetchBase(root: PortablePath, {baseRefs}: {baseRefs: Array
   return {hash, title};
 }
 
+export async function fetchShortHeadHash(root: PortablePath) {
+  const {stdout: mergeBaseStdout} = await execUtils.execvp(`git`, [`rev-parse`, `--short`, `HEAD`], {cwd: root, strict: true});
+  const hash = mergeBaseStdout.trim();
+
+  return hash;
+}
+
+export async function fetchShortHashLastChanged(root: PortablePath, workspaceCwd: PortablePath) {
+  // Get the short sha of the last commit that modified a workspace
+  const {stdout: mergeBaseStdout} = await execUtils.execvp(`git`, [`log`, `-n`, `1`, `--pretty=format:%h`, `--`, workspaceCwd], {cwd: root, strict: true});
+  const hash = mergeBaseStdout.trim();
+
+  return hash;
+}
+
 export async function fetchRoot(initialCwd: PortablePath) {
   // Note: We can't just use `git rev-parse --show-toplevel`, because on Windows
   // it may return long paths even when the cwd uses short paths, and we have no
@@ -96,11 +111,13 @@ export type VersionFile = {
 
   baseHash: string,
   baseTitle: string,
+  shortHeadHash: string
 } | {
   root: null,
 
   baseHash: null,
   baseTitle: null,
+  shortHeadHash: null,
 });
 
 export async function resolveVersionFiles(project: Project, {prerelease = null}: {prerelease?: string | null} = {}) {
@@ -150,8 +167,17 @@ export async function resolveVersionFiles(project: Project, {prerelease = null}:
   }
 
   if (prerelease) {
+    const versionFile = await openVersionFile(project);
+    if (versionFile === null || versionFile.releaseRoots.size === 0)
+      return candidateReleases;
+
+    if (versionFile.root === null)
+      throw new UsageError(`This command can only be run on Git repositories`);
+
     candidateReleases = new Map([...candidateReleases].map(([workspace, release]) => {
-      return [workspace, applyPrerelease(release, {current: workspace.manifest.version!, prerelease})];
+      const hash = versionFile.shortHeadHash;
+
+      return [workspace, applyPrerelease(release, hash)];
     }));
   }
 
@@ -219,6 +245,8 @@ export async function openVersionFile(project: Project, {allowEmpty = false}: {a
     ? await fetchChangedFiles(root, {base: base!.hash, project})
     : [];
 
+  const shortHeadHash = root !== null ? await fetchShortHeadHash(root) : null;
+
   const deferredVersionFolder = configuration.get(`deferredVersionFolder`);
   const versionFiles = changedFiles.filter(p => ppath.contains(deferredVersionFolder, p) !== null);
 
@@ -273,6 +301,8 @@ export async function openVersionFile(project: Project, {allowEmpty = false}: {a
     baseTitle: base !== null
       ? base.title
       : null,
+
+    shortHeadHash,
 
     changedFiles: new Set(changedFiles),
     changedWorkspaces,
@@ -517,68 +547,8 @@ export function applyReleases(project: Project, newVersions: Map<Workspace, stri
   }
 }
 
-const placeholders: Map<string, {
-  extract: (parts: Array<string | number>) => [string | number, Array<string | number>] | null,
-  generate: (previous?: number) => string,
-}> = new Map([
-  [`%n`, {
-    extract: parts => {
-      if (parts.length >= 1) {
-        return [parts[0], parts.slice(1)];
-      } else {
-        return null;
-      }
-    },
-    generate: (previous = 0) => {
-      return `${previous + 1}`;
-    },
-  }],
-]);
 
-export function applyPrerelease(version: string, {current, prerelease}: {current: string, prerelease: string}) {
-  const currentVersion = new semver.SemVer(current);
-
-  let currentPreParts = currentVersion.prerelease.slice();
-  const nextPreParts = [];
-
-  currentVersion.prerelease = [];
-
-  // If the version we have in mind has nothing in common with the one we want,
-  // we don't want to reuse its prerelease identifiers (1.0.0-rc.5 -> 1.1.0->rc.1)
-  if (currentVersion.format() !== version)
-    currentPreParts.length = 0;
-
-  let patternMatched = true;
-
-  const patternParts = prerelease.split(/\./g);
-  for (const part of patternParts) {
-    const placeholder = placeholders.get(part);
-
-    if (typeof placeholder === `undefined`) {
-      nextPreParts.push(part);
-
-      if (currentPreParts[0] === part) {
-        currentPreParts.shift();
-      } else {
-        patternMatched = false;
-      }
-    } else {
-      const res = patternMatched
-        ? placeholder.extract(currentPreParts)
-        : null;
-
-      if (res !== null && typeof res[0] === `number`) {
-        nextPreParts.push(placeholder.generate(res[0]));
-        currentPreParts = res[1];
-      } else {
-        nextPreParts.push(placeholder.generate());
-        patternMatched = false;
-      }
-    }
-  }
-
-  if (currentVersion.prerelease)
-    currentVersion.prerelease = [];
-
-  return `${version}-${nextPreParts.join(`.`)}`;
+export function applyPrerelease(version: string, hash: string) {
+  // v1.2.3-deadbeef
+  return `${version}-${hash}`;
 }
