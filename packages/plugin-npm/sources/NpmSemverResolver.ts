@@ -150,6 +150,7 @@ export class NpmSemverResolver implements Resolver {
     if (typeof manifest.raw.deprecated === `string`)
       opts.report.reportWarningOnce(MessageName.DEPRECATED_PACKAGE, `${structUtils.prettyLocator(opts.project.configuration, locator)} is deprecated: ${manifest.raw.deprecated}`);
 
+
     return {
       ...locator,
 
@@ -165,6 +166,8 @@ export class NpmSemverResolver implements Resolver {
       peerDependenciesMeta: manifest.peerDependenciesMeta,
 
       bin: manifest.bin,
+
+      variants: manifest.variants,
     };
   }
 }

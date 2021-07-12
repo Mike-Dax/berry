@@ -1,3 +1,4 @@
+import {VariantParameters}        from './Manifest';
 import {MessageName}              from './MessageName';
 import {Plugin}                   from './Plugin';
 import {Project}                  from './Project';
@@ -30,6 +31,33 @@ export const CorePlugin: Plugin = {
       }
 
       return dependency;
+    },
+
+    reduceVariantParameters: (variantParameters: VariantParameters, dependency: Descriptor, project: Project, locator: Locator, initialDependency: Descriptor, {resolver, resolveOptions}: {resolver: Resolver, resolveOptions: ResolveOptions}) => {
+      if (dependency.scope === null && dependency.name === `electron`) {
+        return {
+          ...variantParameters,
+          electron: dependency.range,
+        };
+      }
+
+      return variantParameters;
+    },
+
+    reduceVariantStartingParameters: (variantParameters: VariantParameters, project: Project, workspace: Workspace) => {
+      // TODO: What else should be there by default?
+
+      const parameters: VariantParameters = {
+        ...variantParameters,
+        platform: process.platform,
+        arch: process.arch,
+        abi: process.versions.modules,
+      };
+
+      if ((process.versions as any).napi)
+        parameters.napi = (process.versions as any).napi;
+
+      return parameters;
     },
 
     validateProject: async (project: Project, report: {

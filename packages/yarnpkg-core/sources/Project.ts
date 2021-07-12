@@ -18,7 +18,7 @@ import {Installer, BuildDirective, BuildType}                           from './
 import {LegacyMigrationResolver}                                        from './LegacyMigrationResolver';
 import {Linker}                                                         from './Linker';
 import {LockfileResolver}                                               from './LockfileResolver';
-import {DependencyMeta, Manifest}                                       from './Manifest';
+import {DependencyMeta, Manifest, VariantParameters}                    from './Manifest';
 import {MessageName}                                                    from './MessageName';
 import {MultiResolver}                                                  from './MultiResolver';
 import {Report, ReportError}                                            from './Report';
@@ -36,6 +36,7 @@ import * as structUtils                                                 from './
 import {IdentHash, DescriptorHash, LocatorHash, PackageExtensionStatus} from './types';
 import {Descriptor, Ident, Locator, Package}                            from './types';
 import {LinkType}                                                       from './types';
+import {matchVariants}                                                  from './variantUtils';
 
 // When upgraded, the lockfile entries have to be resolved again (but the specific
 // versions are still pinned, no worry). Bump it when you change the fields within
@@ -312,6 +313,7 @@ export class Project {
           const peerDependenciesMeta = manifest.peerDependenciesMeta;
 
           const bin = manifest.bin;
+          const variants = manifest.variants;
 
           if (data.checksum != null) {
             const checksum = typeof cacheKey !== `undefined` && !data.checksum.includes(`/`)
@@ -322,7 +324,7 @@ export class Project {
           }
 
           if (lockfileVersion >= LOCKFILE_VERSION) {
-            const pkg: Package = {...locator, version, languageName, linkType, dependencies, peerDependencies, dependenciesMeta, peerDependenciesMeta, bin};
+            const pkg: Package = {...locator, version, languageName, linkType, dependencies, peerDependencies, dependenciesMeta, peerDependenciesMeta, bin, variants};
             this.originalPackages.set(pkg.locatorHash, pkg);
           }
 
@@ -691,7 +693,7 @@ export class Project {
 
     const resolutionQueue: Array<Promise<unknown>> = [];
 
-    const startPackageResolution = async (locator: Locator) => {
+    const startPackageResolution = async (locator: Locator, variantParameters: VariantParameters) => {
       const originalPkg = await miscUtils.prettifyAsyncErrors(async () => {
         return await resolver.resolve(locator, resolveOptions);
       }, message => {
@@ -705,7 +707,47 @@ export class Project {
 
       const pkg = this.configuration.normalizePackage(originalPkg);
 
+      // See if we need to replace this package
+      if (pkg.variants) {
+        // Iterate over the variants, trying to find a match
+        for (const potentialVariants of pkg.variants) {
+          const potentialMatch = matchVariants(locator, potentialVariants, variantParameters);
+
+          if (potentialMatch) {
+            const originalPkg = await miscUtils.prettifyAsyncErrors(async () => {
+              return await resolver.resolve(locator, resolveOptions);
+            }, message => {
+              return `${structUtils.prettyLocator(this.configuration, locator)}: ${message}`;
+            });
+
+            if (!structUtils.areLocatorsEqual(locator, originalPkg))
+              throw new Error(`Assertion failed: The locator cannot be changed by the resolver (went from ${structUtils.prettyLocator(this.configuration, locator)} to ${structUtils.prettyLocator(this.configuration, originalPkg)})`);
+
+            originalPackages.set(originalPkg.locatorHash, originalPkg);
+
+            const newPackage = this.configuration.normalizePackage(originalPkg);
+
+            // dependency = potentialMatch;
+            console.log(`A variant replaced a package: ${
+              structUtils.prettyLocator(this.configuration, locator)} -> ${
+              structUtils.prettyDescriptor(this.configuration, potentialMatch)} ${
+              JSON.stringify(variantParameters)}`);
+
+            // pkg = newPackage;
+          }
+        }
+      }
+
+      const resolutionQueueNext: Array<Promise<unknown>> = [];
+
       for (const [identHash, descriptor] of pkg.dependencies) {
+        const variantParametersNext = await this.configuration.reduceHook(hooks => {
+          return hooks.reduceVariantParameters;
+        }, variantParameters, descriptor, this, pkg, descriptor, {
+          resolver,
+          resolveOptions,
+        });
+
         const dependency = await this.configuration.reduceHook(hooks => {
           return hooks.reduceDependency;
         }, descriptor, this, pkg, descriptor, {
@@ -718,29 +760,35 @@ export class Project {
 
         const bound = resolver.bindDescriptor(dependency, locator, resolveOptions);
         pkg.dependencies.set(identHash, bound);
+
+        resolutionQueueNext.push(
+          scheduleDescriptorResolution(dependency, variantParametersNext)
+        );
       }
 
-      resolutionQueue.push(Promise.all([...pkg.dependencies.values()].map(descriptor => {
-        return scheduleDescriptorResolution(descriptor);
-      })));
+      resolutionQueue.push(Promise.all(resolutionQueueNext));
+
+      // resolutionQueue.push(Promise.all([...pkg.dependencies.values()].map(descriptor => {
+      //   return scheduleDescriptorResolution(descriptor, variantParameters);
+      // })));
 
       allPackages.set(pkg.locatorHash, pkg);
 
       return pkg;
     };
 
-    const schedulePackageResolution = async (locator: Locator) => {
+    const schedulePackageResolution = async (locator: Locator, variantParameters: VariantParameters) => {
       const promise = packageResolutionPromises.get(locator.locatorHash);
       if (typeof promise !== `undefined`)
         return promise;
 
-      const newPromise = Promise.resolve().then(() => startPackageResolution(locator));
+      const newPromise = Promise.resolve().then(() => startPackageResolution(locator, variantParameters));
       packageResolutionPromises.set(locator.locatorHash, newPromise);
       return newPromise;
     };
 
-    const startDescriptorAliasing = async (descriptor: Descriptor, alias: Descriptor): Promise<Package> => {
-      const resolution = await scheduleDescriptorResolution(alias);
+    const startDescriptorAliasing = async (descriptor: Descriptor, alias: Descriptor, variantParameters: VariantParameters): Promise<Package> => {
+      const resolution = await scheduleDescriptorResolution(alias, variantParameters);
 
       allDescriptors.set(descriptor.descriptorHash, descriptor);
       allResolutions.set(descriptor.descriptorHash, resolution.locatorHash);
@@ -748,14 +796,14 @@ export class Project {
       return resolution;
     };
 
-    const startDescriptorResolution = async (descriptor: Descriptor): Promise<Package> => {
+    const startDescriptorResolution = async (descriptor: Descriptor, variantParameters: VariantParameters): Promise<Package> => {
       const alias = this.resolutionAliases.get(descriptor.descriptorHash);
       if (typeof alias !== `undefined`)
-        return startDescriptorAliasing(descriptor, this.storedDescriptors.get(alias)!);
+        return startDescriptorAliasing(descriptor, this.storedDescriptors.get(alias)!, variantParameters);
 
       const resolutionDependencies = resolver.getResolutionDependencies(descriptor, resolveOptions);
       const resolvedDependencies = new Map(await Promise.all(resolutionDependencies.map(async dependency => {
-        return [dependency.descriptorHash, await scheduleDescriptorResolution(dependency)] as const;
+        return [dependency.descriptorHash, await scheduleDescriptorResolution(dependency, variantParameters)] as const;
       })));
 
       const candidateResolutions = await miscUtils.prettifyAsyncErrors(async () => {
@@ -771,24 +819,28 @@ export class Project {
       allDescriptors.set(descriptor.descriptorHash, descriptor);
       allResolutions.set(descriptor.descriptorHash, finalResolution.locatorHash);
 
-      return schedulePackageResolution(finalResolution);
+      return schedulePackageResolution(finalResolution, variantParameters);
     };
 
-    const scheduleDescriptorResolution = (descriptor: Descriptor) => {
+    const scheduleDescriptorResolution = (descriptor: Descriptor, variantParameters: VariantParameters) => {
       const promise = descriptorResolutionPromises.get(descriptor.descriptorHash);
       if (typeof promise !== `undefined`)
         return promise;
 
       allDescriptors.set(descriptor.descriptorHash, descriptor);
 
-      const newPromise = Promise.resolve().then(() => startDescriptorResolution(descriptor));
+      const newPromise = Promise.resolve().then(() => startDescriptorResolution(descriptor, variantParameters));
       descriptorResolutionPromises.set(descriptor.descriptorHash, newPromise);
       return newPromise;
     };
 
     for (const workspace of this.workspaces) {
+      const startingVariantParameters = await this.configuration.reduceHook(hooks => {
+        return hooks.reduceVariantStartingParameters;
+      }, {}, this, workspace);
+
       const workspaceDescriptor = workspace.anchoredDescriptor;
-      resolutionQueue.push(scheduleDescriptorResolution(workspaceDescriptor));
+      resolutionQueue.push(scheduleDescriptorResolution(workspaceDescriptor, startingVariantParameters));
     }
 
     while (resolutionQueue.length > 0) {
@@ -1498,6 +1550,7 @@ export class Project {
     });
 
     await this.persistInstallStateFile();
+
 
     await this.configuration.triggerHook(hooks => {
       return hooks.afterAllInstalled;

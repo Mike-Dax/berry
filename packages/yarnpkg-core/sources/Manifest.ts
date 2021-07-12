@@ -15,10 +15,62 @@ export interface WorkspaceDefinition {
   pattern: string;
 }
 
+export interface Variants {
+  /**
+   * Which package to fetch?
+   *
+   * A pattern with % delimited strings that will be replaced.
+   *
+   * prisma-build-%platform-%napi
+   */
+  pattern: string
+  /**
+    * What are the supported values?
+    * Follows the same idea as GH Actions' matrix
+    *
+    * "matrix": {
+    *     "platform": {
+    *         "candidates": [
+    *             "darwin",
+    *             "win32"
+    *         ]
+    *     },
+    *     "napi": {
+    *         "candidates": [
+    *             "5",
+    *             "6"
+    *         ]
+    *     }
+    * },
+    */
+  matrix?: VariantMatrix
+
+  /**
+    * Some combinations that specifically aren't supported
+    *
+    * "exclude": [{
+    *   "platform": "win32",
+    *   "napi": "5"
+    * }],
+    */
+  exclude?: Array<VariantParameters>
+}
+
+export interface VariantParameters {
+  [parameter: string]: string
+}
+
+export interface VariantMatrix {
+  [parameter: string]: {
+    candidates: Array<string>
+  }
+}
+
 export interface DependencyMeta {
   built?: boolean;
   optional?: boolean;
   unplugged?: boolean;
+  parameters?: VariantParameters
 }
 
 export interface PeerDependencyMeta {
@@ -72,6 +124,7 @@ export class Manifest {
   public peerDependenciesMeta: Map<string, PeerDependencyMeta> = new Map();
 
   public resolutions: Array<{pattern: Resolution, reference: string}> = [];
+  public variants: Array<Variants> | null = null;
 
   public files: Set<PortablePath> | null = null;
   public publishConfig: PublishConfig | null = null;
@@ -258,6 +311,17 @@ export class Manifest {
       this.main = normalizeSlashes(data.main);
     else
       this.main = null;
+
+    if (typeof data.variants === `object`) {
+      if (Array.isArray(data.variants))
+        this.variants = data.variants;
+      else
+        this.variants = [data.variants]; // TODO: Actually parse this instead of blindly copying
+
+      console.log(`Manfiest found a variants`, this.name);
+    } else {
+      this.variants = null;
+    }
 
     if (typeof data.module === `string`)
       this.module = normalizeSlashes(data.module);

@@ -127,6 +127,8 @@ export function renamePackage(pkg: Package, locator: Locator): Package {
     peerDependenciesMeta: new Map(pkg.peerDependenciesMeta),
 
     bin: new Map(pkg.bin),
+
+    variants: pkg.variants,
   };
 }
 
