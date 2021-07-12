@@ -4,7 +4,9 @@ import {VariantMatrix, VariantParameters, Variants} from "./Manifest";
 import {Ident, Locator}                             from "./types";
 
 
-export function combineVariantMatrix(variantMatrix: VariantMatrix, exclusions: Array<VariantParameters>, keys: Array<string>, keyIndex = 0, combinations: Array<VariantParameters> = [], stack: VariantParameters = {}) {
+export function combineVariantMatrix(variantMatrix: VariantMatrix, exclusions: Array<VariantParameters> = [], keyIndex = 0, combinations: Array<VariantParameters> = [], stack: VariantParameters = {}) {
+  const keys = Object.keys(variantMatrix ?? {});
+
   if (keyIndex === keys.length) {
     // Check if this matches an exclusion record
     let include = true;
@@ -32,7 +34,7 @@ export function combineVariantMatrix(variantMatrix: VariantMatrix, exclusions: A
     const candidates = variantMatrix[key].candidates;
 
     for (const candidate of candidates) {
-      combineVariantMatrix(variantMatrix, exclusions, keys, keyIndex + 1, combinations, {
+      combineVariantMatrix(variantMatrix, exclusions, keyIndex + 1, combinations, {
         ...stack,
         [key]: candidate,
       });
@@ -43,10 +45,8 @@ export function combineVariantMatrix(variantMatrix: VariantMatrix, exclusions: A
 }
 
 export function matchVariantParameters(possibilities: Array<VariantParameters>, parameters: VariantParameters) {
-  const parameterKeys = Object.keys(parameters);
-
   possibilityLoop: for (const possibility of possibilities) {
-    for (const key of parameterKeys) {
+    for (const key of Object.keys(possibility)) {
       if (possibility[key] !== parameters[key]) {
         // If this key doesn't match, skip this possibility
         continue possibilityLoop;
@@ -88,11 +88,8 @@ export function matchVariants(variants: Variants, variantParameters: VariantPara
     return structUtils.parseIdent(variants.pattern);
   }
 
-  // Collect all the parameter keys
-  const parameterKeys = Object.keys(matrix ?? {});
-
   // Build the combinations from the possibilities
-  const possibilities = combineVariantMatrix(matrix, variants.exclude ?? [], parameterKeys);
+  const possibilities = combineVariantMatrix(matrix, variants.exclude);
 
   // For every possibility, check if the current variant parameters match
   const match = matchVariantParameters(possibilities, variantParameters);
