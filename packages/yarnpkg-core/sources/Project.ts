@@ -762,7 +762,7 @@ export class Project {
         pkg.dependencies.set(identHash, bound);
 
         resolutionQueueNext.push(
-          scheduleDescriptorResolution(dependency, variantParametersNext)
+          scheduleDescriptorResolution(bound, variantParametersNext)
         );
       }
 
