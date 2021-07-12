@@ -101,6 +101,7 @@ export class FileResolver implements Resolver {
       peerDependenciesMeta: manifest.peerDependenciesMeta,
 
       bin: manifest.bin,
+      variants: manifest.variants,
     };
   }
 }

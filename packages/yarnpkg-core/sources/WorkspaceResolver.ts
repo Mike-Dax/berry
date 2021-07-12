@@ -65,7 +65,6 @@ export class WorkspaceResolver implements Resolver {
       peerDependenciesMeta: workspace.manifest.peerDependenciesMeta,
 
       bin: workspace.manifest.bin,
-
       variants: workspace.manifest.variants,
     };
   }
