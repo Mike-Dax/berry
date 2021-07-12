@@ -1,5 +1,5 @@
-import {PortablePath, ppath, xfs, normalizeLineEndings, Filename}       from '@yarnpkg/fslib';
 import {npath}                                                          from '@yarnpkg/fslib';
+import {PortablePath, ppath, xfs, normalizeLineEndings, Filename}       from '@yarnpkg/fslib';
 import {parseSyml, stringifySyml}                                       from '@yarnpkg/parsers';
 import {UsageError}                                                     from 'clipanion';
 import {createHash}                                                     from 'crypto';
@@ -25,6 +25,7 @@ import {Report, ReportError}                                            from './
 import {ResolveOptions, Resolver}                                       from './Resolver';
 import {RunInstallPleaseResolver}                                       from './RunInstallPleaseResolver';
 import {ThrowReport}                                                    from './ThrowReport';
+import {WorkspaceResolver}                                              from './WorkspaceResolver';
 import {Workspace}                                                      from './Workspace';
 import {isFolderInside}                                                 from './folderUtils';
 import * as formatUtils                                                 from './formatUtils';
@@ -33,10 +34,10 @@ import * as miscUtils                                                   from './
 import * as scriptUtils                                                 from './scriptUtils';
 import * as semverUtils                                                 from './semverUtils';
 import * as structUtils                                                 from './structUtils';
-import {IdentHash, DescriptorHash, LocatorHash, PackageExtensionStatus} from './types';
-import {Descriptor, Ident, Locator, Package}                            from './types';
 import {LinkType}                                                       from './types';
-import {matchVariants}                                                  from './variantUtils';
+import {Descriptor, Ident, Locator, Package}                            from './types';
+import {IdentHash, DescriptorHash, LocatorHash, PackageExtensionStatus} from './types';
+import {matchVariants, replaceVariantLocator}                           from './variantUtils';
 
 // When upgraded, the lockfile entries have to be resolved again (but the specific
 // versions are still pinned, no worry). Bump it when you change the fields within
@@ -705,35 +706,44 @@ export class Project {
 
       originalPackages.set(originalPkg.locatorHash, originalPkg);
 
-      const pkg = this.configuration.normalizePackage(originalPkg);
+      let pkg = this.configuration.normalizePackage(originalPkg);
 
       // See if we need to replace this package
       if (pkg.variants) {
+        if (pkg.reference.startsWith(WorkspaceResolver.protocol))
+          throw new Error(`Assertion failed: Packages can't use variants if resolved with the workspace resolver (the package being replaced was ${structUtils.prettyLocator(this.configuration, originalPkg)})`);
+
         // Iterate over the variants, trying to find a match
         for (const potentialVariants of pkg.variants) {
-          const potentialMatch = matchVariants(locator, potentialVariants, variantParameters);
+          const potentialMatch = matchVariants(potentialVariants, variantParameters);
 
           if (potentialMatch) {
-            const originalPkg = await miscUtils.prettifyAsyncErrors(async () => {
-              return await resolver.resolve(locator, resolveOptions);
+            console.log(`Found a replacement for ${structUtils.prettyLocator(this.configuration, pkg)}`);
+            console.log(`Ref: ${pkg.reference}`);
+            console.log(`potentialMatch: ${potentialMatch}`);
+
+            const replacementLocator = replaceVariantLocator(locator, potentialMatch);
+
+            const variantReplacementPackage = await miscUtils.prettifyAsyncErrors(async () => {
+              return await resolver.resolve(replacementLocator, resolveOptions);
             }, message => {
-              return `${structUtils.prettyLocator(this.configuration, locator)}: ${message}`;
+              return `${structUtils.prettyLocator(this.configuration, replacementLocator)}: ${message}`;
             });
 
-            if (!structUtils.areLocatorsEqual(locator, originalPkg))
-              throw new Error(`Assertion failed: The locator cannot be changed by the resolver (went from ${structUtils.prettyLocator(this.configuration, locator)} to ${structUtils.prettyLocator(this.configuration, originalPkg)})`);
+            if (!structUtils.areLocatorsEqual(locator, variantReplacementPackage))
+              throw new Error(`Assertion failed: The locator cannot be changed by the resolver (went from ${structUtils.prettyLocator(this.configuration, replacementLocator)} to ${structUtils.prettyLocator(this.configuration, variantReplacementPackage)})`);
 
-            originalPackages.set(originalPkg.locatorHash, originalPkg);
+            originalPackages.set(variantReplacementPackage.locatorHash, variantReplacementPackage);
 
-            const newPackage = this.configuration.normalizePackage(originalPkg);
+            const newPackage = this.configuration.normalizePackage(variantReplacementPackage);
 
             // dependency = potentialMatch;
             console.log(`A variant replaced a package: ${
-              structUtils.prettyLocator(this.configuration, locator)} -> ${
-              structUtils.prettyDescriptor(this.configuration, potentialMatch)} ${
+              structUtils.prettyLocator(this.configuration, pkg)} -> ${
+              structUtils.prettyLocator(this.configuration, variantReplacementPackage)} ${
               JSON.stringify(variantParameters)}`);
 
-            // pkg = newPackage;
+            pkg = newPackage;
           }
         }
       }

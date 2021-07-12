@@ -1,7 +1,7 @@
 import {structUtils}                                from "@yarnpkg/core";
 
 import {VariantMatrix, VariantParameters, Variants} from "./Manifest";
-import {Descriptor, Locator}                        from "./types";
+import {Ident, Locator}                             from "./types";
 
 
 export function combineVariantMatrix(variantMatrix: VariantMatrix, exclusions: Array<VariantParameters>, keys: Array<string>, keyIndex = 0, combinations: Array<VariantParameters> = [], stack: VariantParameters = {}) {
@@ -78,17 +78,20 @@ export function templateVariantPattern(pattern: string, parameters: VariantParam
   return patternToReplace;
 }
 
-export function matchVariants(locator: Locator, variants: Variants, variantParameters: VariantParameters): Descriptor | null {
+export function matchVariants(variants: Variants, variantParameters: VariantParameters): Ident | null {
   const matrix = variants.matrix;
   // If this is a fallback, return immediately
-  if (!matrix)
-    return structUtils.parseDescriptor(variants.pattern);
+  if (!matrix) {
+    if (variants.pattern.includes(`%`))
+      throw new Error(`Assertion failed: Variant patterns can't contain templating if no matrix exists`);
+
+    return structUtils.parseIdent(variants.pattern);
+  }
 
   // Collect all the parameter keys
   const parameterKeys = Object.keys(matrix ?? {});
 
   // Build the combinations from the possibilities
-
   const possibilities = combineVariantMatrix(matrix, variants.exclude ?? [], parameterKeys);
 
   // For every possibility, check if the current variant parameters match
@@ -97,12 +100,62 @@ export function matchVariants(locator: Locator, variants: Variants, variantParam
   if (match) {
     const replacementDescriptorString = templateVariantPattern(variants.pattern, variantParameters);
 
-    const ident = structUtils.parseIdent(replacementDescriptorString);
-    const descriptor = structUtils.convertLocatorToDescriptor(locator);
-
     // Return the replaced ident with the range of the locator
-    return structUtils.makeDescriptor(ident, descriptor.range);
+    return structUtils.parseIdent(replacementDescriptorString);
   }
 
   return null;
 }
+
+export function replaceVariantLocator(locator: Locator, replacement: Ident) {
+  return structUtils.makeLocator(replacement, locator.reference);
+}
+
+/**
+ * Packages can set variantParamaters for their descendents
+ *
+ * "variantParamaters": {
+ *   "platform": "wasm"
+ * },
+ *
+ * Packages can provide variants that will be resolved
+ *
+ * "variants": [
+ *   {
+ *     "pattern": "prisma-build-%platform-%napi",
+ *     "matrix": {
+ *       "platform": {
+ *         "candidates": [
+ *           "darwin",
+ *           "win32"
+ *         ]
+ *       },
+ *       "napi": {
+ *         "candidates": [
+ *           "5",
+ *           "6"
+ *         ]
+ *       }
+ *     },
+ *     "exclude": [
+ *       {
+ *         "platform": "win32",
+ *         "napi": 5
+ *       }
+ *     ]
+ *   },
+ *   {
+ *     "pattern": "prisma-build-%platform",
+ *     "matrix": {
+ *       "platform": {
+ *         "candidates": [
+ *           "wasm"
+ *         ]
+ *       }
+ *     }
+ *   },
+ *   {
+ *     "pattern": "prisma-build-sources"
+ *   }
+ * ]
+ */
