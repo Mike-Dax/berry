@@ -75,5 +75,20 @@ describe(`variantUtils`, () => {
         {A: `1`}
       );
     });
+    it(`should match parameters with custom comparators`, () => {
+      expect(
+        variantUtils.matchVariantParameters([{
+          backwardsCompatibleParameter: `3`,
+        }, {
+          backwardsCompatibleParameter: `5`,
+        }], {
+          backwardsCompatibleParameter: `4`,
+        }, {
+          backwardsCompatibleParameter: (parameterValue, possiblityValue) => parseInt(parameterValue) >= parseInt(possiblityValue),
+        })
+      ).toMatchObject(
+        {backwardsCompatibleParameter: `3`}
+      );
+    });
   });
 });

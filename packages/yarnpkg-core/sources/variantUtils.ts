@@ -44,10 +44,21 @@ export function combineVariantMatrix(variantMatrix: VariantMatrix, exclusions: A
   return combinations;
 }
 
-export function matchVariantParameters(possibilities: Array<VariantParameters>, parameters: VariantParameters) {
+/**
+ * Custom functions to determine if parameters are compatible
+ */
+export interface VariantParameterComparators {
+  [parameterKey: string]: (parameterValue: string, possibilityValue: string) => boolean
+}
+
+const defaultParameterComparator = (parameterValue: string, possibilityValue: string) => parameterValue === possibilityValue;
+
+export function matchVariantParameters(possibilities: Array<VariantParameters>, parameters: VariantParameters, comparators: VariantParameterComparators = {}) {
   possibilityLoop: for (const possibility of possibilities) {
     for (const key of Object.keys(possibility)) {
-      if (possibility[key] !== parameters[key]) {
+      const comparator = comparators[key] ? comparators[key] : defaultParameterComparator;
+
+      if (!comparator(parameters[key], possibility[key])) {
         // If this key doesn't match, skip this possibility
         continue possibilityLoop;
       }
@@ -78,7 +89,7 @@ export function templateVariantPattern(pattern: string, parameters: VariantParam
   return patternToReplace;
 }
 
-export function matchVariants(variants: Variants, variantParameters: VariantParameters): Ident | null {
+export function matchVariants(variants: Variants, variantParameters: VariantParameters, variantParameterComparators: VariantParameterComparators): Ident | null {
   const matrix = variants.matrix;
   // If this is a fallback, return immediately
   if (!matrix) {
@@ -92,7 +103,7 @@ export function matchVariants(variants: Variants, variantParameters: VariantPara
   const possibilities = combineVariantMatrix(matrix, variants.exclude);
 
   // For every possibility, check if the current variant parameters match
-  const match = matchVariantParameters(possibilities, variantParameters);
+  const match = matchVariantParameters(possibilities, variantParameters, variantParameterComparators);
 
   if (match) {
     const replacementDescriptorString = templateVariantPattern(variants.pattern, variantParameters);
@@ -109,9 +120,9 @@ export function replaceVariantLocator(locator: Locator, replacement: Ident) {
 }
 
 /**
- * Packages can set variantParamaters for their descendents
+ * Packages can set variantParameters for their descendents
  *
- * "variantParamaters": {
+ * "variantParameters": {
  *   "platform": "wasm"
  * },
  *

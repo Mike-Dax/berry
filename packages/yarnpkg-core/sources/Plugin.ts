@@ -11,6 +11,7 @@ import {Project, InstallOptions}                                                
 import {Resolver, ResolveOptions}                                                             from './Resolver';
 import {Workspace}                                                                            from './Workspace';
 import {Locator, Descriptor}                                                                  from './types';
+import {VariantParameterComparators}                                                          from './variantUtils';
 
 type ProcessEnvironment = {[key: string]: string};
 
@@ -116,6 +117,15 @@ export type Hooks = {
     project: Project,
     workspace: Workspace,
   ) => Promise<VariantParameters>,
+
+  /**
+   * Custom comparator functions for variant parameters.
+   *
+   * For example, Node is backwards compatible with NAPI versions, they don't need to match exactly.
+   */
+  reduceVariantParameterComparators?: (
+    variantParameterComparators: VariantParameterComparators,
+  ) => Promise<VariantParameterComparators>,
 
   /**
    * Called after the `install` method from the `Project` class successfully

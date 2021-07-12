@@ -694,6 +694,10 @@ export class Project {
 
     const resolutionQueue: Array<Promise<unknown>> = [];
 
+    const variantParameterComparators = await this.configuration.reduceHook(hooks => {
+      return hooks.reduceVariantParameterComparators;
+    }, {});
+
     const startPackageResolution = async (locator: Locator, variantParameters: VariantParameters) => {
       const originalPkg = await miscUtils.prettifyAsyncErrors(async () => {
         return await resolver.resolve(locator, resolveOptions);
@@ -715,7 +719,7 @@ export class Project {
 
         // Iterate over the variants, trying to find a match
         for (const potentialVariants of pkg.variants) {
-          const potentialMatch = matchVariants(potentialVariants, variantParameters);
+          const potentialMatch = matchVariants(potentialVariants, variantParameters, variantParameterComparators);
 
           if (potentialMatch) {
             console.log(`Found a replacement for ${structUtils.prettyLocator(this.configuration, pkg)}`);
