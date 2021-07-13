@@ -178,6 +178,7 @@ export enum PackageExtensionType {
   Dependency = `Dependency`,
   PeerDependency = `PeerDependency`,
   PeerDependencyMeta = `PeerDependencyMeta`,
+  Variants = `Variants`,
 }
 
 export enum PackageExtensionStatus {
@@ -190,6 +191,7 @@ export type PackageExtension = (
   | {type: PackageExtensionType.Dependency, descriptor: Descriptor}
   | {type: PackageExtensionType.PeerDependency, descriptor: Descriptor}
   | {type: PackageExtensionType.PeerDependencyMeta, selector: string, key: keyof PeerDependencyMeta, value: any}
+  | {type: PackageExtensionType.Variants, variants: Array<Variants>}
 ) & {
   status: PackageExtensionStatus,
   userProvided: boolean,

@@ -119,6 +119,12 @@ export function replaceVariantLocator(locator: Locator, replacement: Ident) {
   return structUtils.makeLocator(replacement, locator.reference);
 }
 
+// A deep equality
+export function compareVariantConfiguration(variantsA: Array<Variants> | null, variantsB: Array<Variants> | null) {
+  // TODO: actually compare
+  return false;
+}
+
 /**
  * Packages can set variantParameters for their descendents
  *

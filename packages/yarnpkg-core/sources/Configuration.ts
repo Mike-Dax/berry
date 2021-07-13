@@ -26,6 +26,7 @@ import * as nodeUtils                                                           
 import * as semverUtils                                                                                 from './semverUtils';
 import * as structUtils                                                                                 from './structUtils';
 import {IdentHash, Package, Descriptor, PackageExtension, PackageExtensionType, PackageExtensionStatus} from './types';
+import {compareVariantConfiguration}                                                                    from './variantUtils';
 
 const IGNORED_ENV_VARIABLES = new Set([
   // "binFolder" is the magic location where the parent process stored the
@@ -1445,6 +1446,8 @@ export class Configuration {
         extensionsPerRange.push({...baseExtension, type: PackageExtensionType.Dependency, descriptor: dependency});
       for (const peerDependency of extension.peerDependencies.values())
         extensionsPerRange.push({...baseExtension, type: PackageExtensionType.PeerDependency, descriptor: peerDependency});
+      if (extension.variants)
+        extensionsPerRange.push({...baseExtension, type: PackageExtensionType.Variants, variants: extension.variants});
 
       for (const [selector, meta] of extension.peerDependenciesMeta) {
         for (const [key, value] of Object.entries(meta)) {
@@ -1508,6 +1511,14 @@ export class Configuration {
                 if (typeof currentPeerDependencyMeta === `undefined` || !Object.prototype.hasOwnProperty.call(currentPeerDependencyMeta, extension.key) || currentPeerDependencyMeta[extension.key] !== extension.value) {
                   extension.status = PackageExtensionStatus.Active;
                   miscUtils.getFactoryWithDefault(pkg.peerDependenciesMeta, extension.selector, () => ({} as PeerDependencyMeta))[extension.key] = extension.value;
+                }
+              } break;
+
+              case PackageExtensionType.Variants: {
+                const currentVariants = pkg.variants;
+                if (currentVariants === null || compareVariantConfiguration(currentVariants, extension.variants)) {
+                  extension.status = PackageExtensionStatus.Active;
+                  pkg.variants = extension.variants;
                 }
               } break;
 

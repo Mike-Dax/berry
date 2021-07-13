@@ -170,6 +170,8 @@ const transforms = {
           return `${structUtils.prettyIdent(configuration, packageExtension.parentDescriptor)} ➤ ${applyColor(configuration, `peerDependencies`, Type.CODE)} ➤ ${structUtils.prettyIdent(configuration, packageExtension.descriptor)}`;
         case PackageExtensionType.PeerDependencyMeta:
           return `${structUtils.prettyIdent(configuration, packageExtension.parentDescriptor)} ➤ ${applyColor(configuration, `peerDependenciesMeta`, Type.CODE)} ➤ ${structUtils.prettyIdent(configuration, structUtils.parseIdent(packageExtension.selector))} ➤ ${applyColor(configuration, packageExtension.key, Type.CODE)}`;
+        case PackageExtensionType.Variants:
+          return `${structUtils.prettyIdent(configuration, packageExtension.parentDescriptor)} Variant Information`;
         default:
           throw new Error(`Assertion failed: Unsupported package extension type: ${(packageExtension as PackageExtension).type}`);
       }
@@ -182,6 +184,8 @@ const transforms = {
           return `${structUtils.stringifyIdent(packageExtension.parentDescriptor)} >> ${structUtils.stringifyIdent(packageExtension.descriptor)}`;
         case PackageExtensionType.PeerDependencyMeta:
           return `${structUtils.stringifyIdent(packageExtension.parentDescriptor)} >> ${packageExtension.selector} / ${packageExtension.key}`;
+        case PackageExtensionType.Variants:
+          return `${structUtils.stringifyIdent(packageExtension.parentDescriptor)} > Variant Information`;
         default:
           throw new Error(`Assertion failed: Unsupported package extension type: ${(packageExtension as PackageExtension).type}`);
       }
