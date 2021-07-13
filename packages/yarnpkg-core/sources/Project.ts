@@ -739,6 +739,8 @@ export class Project {
               throw new Error(`Assertion failed: The locator cannot be changed by the resolver (went from ${structUtils.prettyLocator(this.configuration, replacementLocator)} to ${structUtils.prettyLocator(this.configuration, variantReplacementPackage)})`);
 
             originalPackages.set(variantReplacementPackage.locatorHash, variantReplacementPackage);
+            // register the old package? how do we delete it so we don't grab its files.
+            allPackages.set(pkg.locatorHash, pkg);
 
             const newPackage = this.configuration.normalizePackage(variantReplacementPackage);
 
