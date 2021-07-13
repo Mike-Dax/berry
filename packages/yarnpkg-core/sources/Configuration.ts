@@ -478,6 +478,12 @@ export const coreDefinitions: {[coreSettingName: string]: SettingsDefinition} = 
             },
           },
         },
+        variants: {
+          description: `Variant information for replacing packages with different ones under certain circumstances`,
+          type: SettingsType.ANY,
+          isArray: true,
+          default: null,
+        },
       },
     },
   },
