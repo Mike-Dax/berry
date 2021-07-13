@@ -714,12 +714,17 @@ export class Project {
 
       // See if we need to replace this package
       if (pkg.variants) {
+        const thisPackageVariantParameters = {
+          ...variantParameters,
+          ...(this.getDependencyMeta(pkg, pkg.version).parameters ?? {}),
+        };
+
         if (pkg.reference.startsWith(WorkspaceResolver.protocol))
           throw new Error(`Assertion failed: Packages can't use variants if resolved with the workspace resolver (the package being replaced was ${structUtils.prettyLocator(this.configuration, originalPkg)})`);
 
         // Iterate over the variants, trying to find a match
         for (const potentialVariants of pkg.variants) {
-          const potentialMatch = matchVariants(potentialVariants, variantParameters, variantParameterComparators);
+          const potentialMatch = matchVariants(potentialVariants, thisPackageVariantParameters, variantParameterComparators);
 
           if (potentialMatch) {
             console.log(`Found a replacement for ${structUtils.prettyLocator(this.configuration, pkg)}`);
@@ -745,7 +750,7 @@ export class Project {
             console.log(`A variant replaced a package: ${
               structUtils.prettyLocator(this.configuration, pkg)} -> ${
               structUtils.prettyLocator(this.configuration, variantReplacementPackage)} ${
-              JSON.stringify(variantParameters)}`);
+              JSON.stringify(thisPackageVariantParameters)}`);
 
             pkg = newPackage;
           }
