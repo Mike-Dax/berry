@@ -727,10 +727,6 @@ export class Project {
           const potentialMatch = matchVariants(potentialVariants, thisPackageVariantParameters, variantParameterComparators);
 
           if (potentialMatch) {
-            console.log(`Found a replacement for ${structUtils.prettyLocator(this.configuration, pkg)}`);
-            console.log(`Ref: ${pkg.reference}`);
-            console.log(`potentialMatch: ${potentialMatch}`);
-
             const replacementLocator = replaceVariantLocator(locator, potentialMatch);
 
             const variantReplacementPackage = await miscUtils.prettifyAsyncErrors(async () => {
@@ -739,7 +735,7 @@ export class Project {
               return `${structUtils.prettyLocator(this.configuration, replacementLocator)}: ${message}`;
             });
 
-            if (!structUtils.areLocatorsEqual(locator, variantReplacementPackage))
+            if (!structUtils.areLocatorsEqual(replacementLocator, variantReplacementPackage))
               throw new Error(`Assertion failed: The locator cannot be changed by the resolver (went from ${structUtils.prettyLocator(this.configuration, replacementLocator)} to ${structUtils.prettyLocator(this.configuration, variantReplacementPackage)})`);
 
             originalPackages.set(variantReplacementPackage.locatorHash, variantReplacementPackage);
@@ -749,7 +745,7 @@ export class Project {
             // dependency = potentialMatch;
             console.log(`A variant replaced a package: ${
               structUtils.prettyLocator(this.configuration, pkg)} -> ${
-              structUtils.prettyLocator(this.configuration, variantReplacementPackage)} ${
+              structUtils.prettyLocator(this.configuration, variantReplacementPackage)} with environment: ${
               JSON.stringify(thisPackageVariantParameters)}`);
 
             pkg = newPackage;
