@@ -312,7 +312,7 @@ export class Manifest {
     else
       this.main = null;
 
-    if (typeof data.variants === `object`) {
+    if (typeof data.variants === `object` && data.variants !== null) {
       if (Array.isArray(data.variants))
         this.variants = data.variants;
       else
