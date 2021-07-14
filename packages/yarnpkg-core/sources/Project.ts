@@ -772,26 +772,51 @@ export class Project {
                 structUtils.prettyLocator(this.configuration, resolveAttempt)} with environment: ${
                 JSON.stringify(thisPackageVariantParameters)}, modifying ${pkgParent?.name}'s dependency resolution to this`);
 
-              if (pkgParent) {
-                // Reach up into the package that requested this and add this dependency
-                const boundNewDependency = resolver.bindDescriptor(matchDescriptor, resolveAttempt, resolveOptions);
-                pkgParent.dependencies.set(matchDescriptor.identHash, boundNewDependency);
+              const pkgParentOrWorkspace = pkgParent ?? workspace;
 
-                // then find the old dependency and remove it
-                for (const [parentDependencyIdentHash, parentDependencyDescriptor] of pkgParent.dependencies) {
-                  if (parentDependencyDescriptor.name === pkg.name && parentDependencyDescriptor.scope === pkg.scope) {
-                    pkgParent.dependencies.delete(parentDependencyIdentHash);
-                    // Remove from all descriptors, TODO: this probably isn't safe if it's used elsewhere without being a variant
-                    allDescriptors.delete(parentDependencyDescriptor.descriptorHash);
-                    allResolutions.delete(parentDependencyDescriptor.descriptorHash);
-                    break;
-                  }
+              // Reach up into the package that requested this and add this dependency
+              const boundNewDependency = resolver.bindDescriptor(matchDescriptor, resolveAttempt, resolveOptions);
+
+              // Find the old dependency and remove it
+              parentDependencyLoop: for (const [parentDependencyPkgIdentHash, parentDependencyPkgDescriptor] of pkgParentOrWorkspace.dependencies) {
+                if (parentDependencyPkgDescriptor.name === pkg.name && parentDependencyPkgDescriptor.scope === pkg.scope) {
+                  // Delete the old dependency
+                  if (pkgParentOrWorkspace.dependencies.has(parentDependencyPkgIdentHash))
+                    console.log(`Deleting old dependency ${structUtils.prettyDescriptor(this.configuration, parentDependencyPkgDescriptor)} from pkgParentOrWorkspace.dependencies`);
+                  if (allDescriptors.has(parentDependencyPkgDescriptor.descriptorHash))
+                    console.log(`Deleting old descriptorHash ${structUtils.prettyDescriptor(this.configuration, parentDependencyPkgDescriptor)} from allDescriptors`);
+                  if (allResolutions.has(parentDependencyPkgDescriptor.descriptorHash))
+                    console.log(`Deleting old descriptorHash ${structUtils.prettyDescriptor(this.configuration, parentDependencyPkgDescriptor)} from allResolutions`);
+                  if (allPackages.has(pkg.locatorHash))
+                    console.log(`Deleting old locatorHash ${structUtils.prettyLocator(this.configuration, pkg)} from allPackages`);
+                  if (originalPackages.has(originalPkg.locatorHash))
+                    console.log(`originalPackages has locatorHash ${structUtils.prettyLocator(this.configuration, originalPkg)}`);
+
+                  console.log(`parentDependencyPkgDescriptor.descriptorHash ${parentDependencyPkgDescriptor.descriptorHash} for ${structUtils.prettyDescriptor(this.configuration, parentDependencyPkgDescriptor)}`);
+
+                  pkgParentOrWorkspace.dependencies.delete(parentDependencyPkgIdentHash);
+
+                  // Remove from all descriptors, TODO: this probably isn't safe if it's used elsewhere without being a variant
+
+                  allDescriptors.delete(parentDependencyPkgDescriptor.descriptorHash);
+                  allResolutions.delete(parentDependencyPkgDescriptor.descriptorHash);
+
+                  // Delete the locator hash
+                  // allPackages.delete(pkg.locatorHash);
+
+                  // Actually try overwriting all of them
+                  pkgParentOrWorkspace.dependencies.set(parentDependencyPkgIdentHash, matchDescriptor);
+                  allDescriptors.set(parentDependencyPkgDescriptor.descriptorHash, boundNewDependency);
+                  allResolutions.set(parentDependencyPkgDescriptor.descriptorHash, resolveAttempt.locatorHash);
+                  break parentDependencyLoop;
                 }
-
-
-                // We'll be grabbing _this_ package's dependencies next.
-                pkg = resolveAttempt;
               }
+
+              // Add it at the correct identHash
+              pkgParentOrWorkspace.dependencies.set(matchDescriptor.identHash, boundNewDependency);
+
+              // We'll be grabbing _this_ package's dependencies next.
+              pkg = resolveAttempt;
 
               break matchLoop;
             } catch (resolveFailure) {
@@ -832,10 +857,6 @@ export class Project {
       }
 
       resolutionQueue.push(Promise.all(resolutionQueueNext));
-
-      if (pkg.name === `app-builder-bin`)
-        console.log(`about to set an allPackages locatorHash for ${pkg.name}: ${pkg.locatorHash}`);
-
 
       allPackages.set(pkg.locatorHash, pkg);
 
@@ -1681,6 +1702,8 @@ export class Project {
       manifest.peerDependenciesMeta = new Map(pkg.peerDependenciesMeta);
 
       manifest.bin = new Map(pkg.bin);
+      manifest.variants = pkg.variants;
+
 
       let entryChecksum: string | undefined;
       const checksum = this.storedChecksums.get(pkg.locatorHash);
