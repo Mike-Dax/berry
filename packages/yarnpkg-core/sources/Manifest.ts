@@ -44,6 +44,18 @@ export interface Variants {
     * }],
     */
   exclude?: Array<VariantParameters>
+
+  /**
+    * Some combinations that specifically are supported.
+    *
+    * "include": [{
+    *   "platform": "linux",
+    *   "napi": "6"
+    * }],
+    *
+    * If a combination is both included and excluded, it is included.
+    */
+  include?: Array<VariantParameters>
 }
 
 export interface VariantParameters {

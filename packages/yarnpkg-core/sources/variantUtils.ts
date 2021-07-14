@@ -1,11 +1,15 @@
 import {structUtils}                                from "@yarnpkg/core";
 
 import {VariantMatrix, VariantParameters, Variants} from "./Manifest";
-import {Ident, Locator}                             from "./types";
+import {Descriptor, Ident, Locator}                 from "./types";
 
 
 export function combineVariantMatrix(variantMatrix: VariantMatrix, exclusions: Array<VariantParameters> = [], keyIndex = 0, combinations: Array<VariantParameters> = [], stack: VariantParameters = {}) {
-  const keys = Object.keys(variantMatrix ?? {});
+  const keys = Object.keys(variantMatrix);
+
+  // If there's no matrix, there's no combinations
+  if (keys.length === 0)
+    return [];
 
   if (keyIndex === keys.length) {
     // Check if this matches an exclusion record
@@ -31,7 +35,7 @@ export function combineVariantMatrix(variantMatrix: VariantMatrix, exclusions: A
     }
   } else {
     const key = keys[keyIndex];
-    const candidates = variantMatrix[key].candidates;
+    const candidates = variantMatrix[key];
 
     for (const candidate of candidates) {
       combineVariantMatrix(variantMatrix, exclusions, keyIndex + 1, combinations, {
@@ -53,7 +57,12 @@ export interface VariantParameterComparators {
 
 const defaultParameterComparator = (parameterValue: string, possibilityValue: string) => parameterValue === possibilityValue;
 
+/**
+ * Given a list of possible parameters, and the current parameters value, match them and return those ones that match
+ */
 export function matchVariantParameters(possibilities: Array<VariantParameters>, parameters: VariantParameters, comparators: VariantParameterComparators = {}) {
+  const matches: Array<VariantParameters> = [];
+
   possibilityLoop: for (const possibility of possibilities) {
     for (const key of Object.keys(possibility)) {
       const comparator = comparators[key] ? comparators[key] : defaultParameterComparator;
@@ -65,11 +74,10 @@ export function matchVariantParameters(possibilities: Array<VariantParameters>, 
     }
 
     // If all keys match, return this possiblity
-    return possibility;
+    matches.push(possibility);
   }
 
-  // None matched
-  return null;
+  return matches;
 }
 
 export function templateVariantPattern(pattern: string, parameters: VariantParameters) {
@@ -86,37 +94,7 @@ export function templateVariantPattern(pattern: string, parameters: VariantParam
     }
   }
 
-  return patternToReplace;
-}
-
-export function matchVariants(variants: Variants, variantParameters: VariantParameters, variantParameterComparators: VariantParameterComparators): Ident | null {
-  const matrix = variants.matrix;
-  // If this is a fallback, return immediately
-  if (!matrix) {
-    if (variants.pattern.includes(`%`))
-      throw new Error(`Assertion failed: Variant patterns can't contain templating if no matrix exists`);
-
-    return structUtils.parseIdent(variants.pattern);
-  }
-
-  // Build the combinations from the possibilities
-  const possibilities = combineVariantMatrix(matrix, variants.exclude);
-
-  // For every possibility, check if the current variant parameters match
-  const match = matchVariantParameters(possibilities, variantParameters, variantParameterComparators);
-
-  if (match) {
-    const replacementDescriptorString = templateVariantPattern(variants.pattern, variantParameters);
-
-    // Return the replaced ident with the range of the locator
-    return structUtils.parseIdent(replacementDescriptorString);
-  }
-
-  return null;
-}
-
-export function replaceVariantLocator(locator: Locator, replacement: Ident) {
-  return structUtils.makeLocator(replacement, locator.reference);
+  return structUtils.parseDescriptor(patternToReplace);
 }
 
 // A deep equality

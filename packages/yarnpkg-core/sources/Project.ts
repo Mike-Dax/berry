@@ -700,6 +700,7 @@ export class Project {
 
     const cacheParameters = this.configuration.get(`cacheParameters`);
     const cacheParameterMatrix = combineVariantMatrix(cacheParameters?.matrix ?? {}, cacheParameters?.exclude);
+    cacheParameterMatrix.push(...(cacheParameters?.include ?? []));
 
     console.log(`Variant cache may hold up to ${cacheParameterMatrix.length} versions`);
 
@@ -728,6 +729,7 @@ export class Project {
         for (const potentialVariants of pkg.variants) {
           // The parameter combinations possible for this variant matrix
           const possibilities = combineVariantMatrix(potentialVariants.matrix ?? {}, potentialVariants.exclude);
+          possibilities.push(...(potentialVariants.include ?? []));
           const matches = matchVariantParameters(possibilities, thisPackageVariantParameters, variantParameterComparators);
 
           // Convert our matches into descriptors
@@ -814,10 +816,6 @@ export class Project {
       }
 
       resolutionQueue.push(Promise.all(resolutionQueueNext));
-
-      // resolutionQueue.push(Promise.all([...pkg.dependencies.values()].map(descriptor => {
-      //   return scheduleDescriptorResolution(descriptor, variantParameters);
-      // })));
 
       allPackages.set(pkg.locatorHash, pkg);
 

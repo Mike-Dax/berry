@@ -573,6 +573,7 @@ export interface ConfigurationValueMap {
     matrix: {
       [parameter: string]: Array<string>
     },
+    include: Array<VariantParameters>
     exclude: Array<VariantParameters>
   };
 
