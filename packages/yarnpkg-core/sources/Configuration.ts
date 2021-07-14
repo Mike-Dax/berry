@@ -8,7 +8,7 @@ import pLimit, {Limit}                                                          
 import {PassThrough, Writable}                                                                          from 'stream';
 
 import {CorePlugin}                                                                                     from './CorePlugin';
-import {Manifest, PeerDependencyMeta}                                                                   from './Manifest';
+import {Manifest, PeerDependencyMeta, VariantParameters, Variants}                                      from './Manifest';
 import {MultiFetcher}                                                                                   from './MultiFetcher';
 import {MultiResolver}                                                                                  from './MultiResolver';
 import {Plugin, Hooks}                                                                                  from './Plugin';
@@ -439,6 +439,19 @@ export const coreDefinitions: {[coreSettingName: string]: SettingsDefinition} = 
     default: `throw`,
   },
 
+  /**
+   * cacheParameters:
+   *   matrix:
+   *     platform: [win32, osx]
+   *     napi: [6, 4]
+   *     js: [cjs, esm, es6, es2015, es2020]
+   */
+  cacheParameters: {
+    description: `Cache parameters for variants`,
+    type: SettingsType.ANY,
+    default: null,
+  },
+
   // Package patching - to fix incorrect definitions
   packageExtensions: {
     description: `Map of package corrections to apply on the dependency tree`,
@@ -556,11 +569,19 @@ export interface ConfigurationValueMap {
   enableImmutableCache: boolean;
   checksumBehavior: string;
 
+  cacheParameters: {
+    matrix: {
+      [parameter: string]: Array<string>
+    },
+    exclude: Array<VariantParameters>
+  };
+
   // Package patching - to fix incorrect definitions
   packageExtensions: Map<string, miscUtils.ToMapValue<{
     dependencies?: Map<string, string>,
     peerDependencies?: Map<string, string>,
     peerDependenciesMeta?: Map<string, miscUtils.ToMapValue<{optional?: boolean}>>,
+    variants?: Variants
   }>>;
 }
 

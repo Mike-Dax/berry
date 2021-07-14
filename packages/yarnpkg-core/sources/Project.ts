@@ -1,43 +1,43 @@
-import {npath}                                                          from '@yarnpkg/fslib';
-import {PortablePath, ppath, xfs, normalizeLineEndings, Filename}       from '@yarnpkg/fslib';
-import {parseSyml, stringifySyml}                                       from '@yarnpkg/parsers';
-import {UsageError}                                                     from 'clipanion';
-import {createHash}                                                     from 'crypto';
-import {structuredPatch}                                                from 'diff';
-import pick                                                             from 'lodash/pick';
-import pLimit                                                           from 'p-limit';
-import semver                                                           from 'semver';
-import {promisify}                                                      from 'util';
-import v8                                                               from 'v8';
-import zlib                                                             from 'zlib';
+import {npath}                                                                 from '@yarnpkg/fslib';
+import {PortablePath, ppath, xfs, normalizeLineEndings, Filename}              from '@yarnpkg/fslib';
+import {parseSyml, stringifySyml}                                              from '@yarnpkg/parsers';
+import {UsageError}                                                            from 'clipanion';
+import {createHash}                                                            from 'crypto';
+import {structuredPatch}                                                       from 'diff';
+import pick                                                                    from 'lodash/pick';
+import pLimit                                                                  from 'p-limit';
+import semver                                                                  from 'semver';
+import {promisify}                                                             from 'util';
+import v8                                                                      from 'v8';
+import zlib                                                                    from 'zlib';
 
-import {Cache}                                                          from './Cache';
-import {Configuration}                                                  from './Configuration';
-import {Fetcher}                                                        from './Fetcher';
-import {Installer, BuildDirective, BuildType}                           from './Installer';
-import {LegacyMigrationResolver}                                        from './LegacyMigrationResolver';
-import {Linker}                                                         from './Linker';
-import {LockfileResolver}                                               from './LockfileResolver';
-import {DependencyMeta, Manifest, VariantParameters}                    from './Manifest';
-import {MessageName}                                                    from './MessageName';
-import {MultiResolver}                                                  from './MultiResolver';
-import {Report, ReportError}                                            from './Report';
-import {ResolveOptions, Resolver}                                       from './Resolver';
-import {RunInstallPleaseResolver}                                       from './RunInstallPleaseResolver';
-import {ThrowReport}                                                    from './ThrowReport';
-import {WorkspaceResolver}                                              from './WorkspaceResolver';
-import {Workspace}                                                      from './Workspace';
-import {isFolderInside}                                                 from './folderUtils';
-import * as formatUtils                                                 from './formatUtils';
-import * as hashUtils                                                   from './hashUtils';
-import * as miscUtils                                                   from './miscUtils';
-import * as scriptUtils                                                 from './scriptUtils';
-import * as semverUtils                                                 from './semverUtils';
-import * as structUtils                                                 from './structUtils';
-import {LinkType}                                                       from './types';
-import {Descriptor, Ident, Locator, Package}                            from './types';
-import {IdentHash, DescriptorHash, LocatorHash, PackageExtensionStatus} from './types';
-import {matchVariants, replaceVariantLocator}                           from './variantUtils';
+import {Cache}                                                                 from './Cache';
+import {Configuration}                                                         from './Configuration';
+import {Fetcher}                                                               from './Fetcher';
+import {Installer, BuildDirective, BuildType}                                  from './Installer';
+import {LegacyMigrationResolver}                                               from './LegacyMigrationResolver';
+import {Linker}                                                                from './Linker';
+import {LockfileResolver}                                                      from './LockfileResolver';
+import {DependencyMeta, Manifest, VariantParameters}                           from './Manifest';
+import {MessageName}                                                           from './MessageName';
+import {MultiResolver}                                                         from './MultiResolver';
+import {Report, ReportError}                                                   from './Report';
+import {ResolveOptions, Resolver}                                              from './Resolver';
+import {RunInstallPleaseResolver}                                              from './RunInstallPleaseResolver';
+import {ThrowReport}                                                           from './ThrowReport';
+import {WorkspaceResolver}                                                     from './WorkspaceResolver';
+import {Workspace}                                                             from './Workspace';
+import {isFolderInside}                                                        from './folderUtils';
+import * as formatUtils                                                        from './formatUtils';
+import * as hashUtils                                                          from './hashUtils';
+import * as miscUtils                                                          from './miscUtils';
+import * as scriptUtils                                                        from './scriptUtils';
+import * as semverUtils                                                        from './semverUtils';
+import * as structUtils                                                        from './structUtils';
+import {LinkType}                                                              from './types';
+import {Descriptor, Ident, Locator, Package}                                   from './types';
+import {IdentHash, DescriptorHash, LocatorHash, PackageExtensionStatus}        from './types';
+import {combineVariantMatrix, matchVariantParameters,  templateVariantPattern} from './variantUtils';
 
 // When upgraded, the lockfile entries have to be resolved again (but the specific
 // versions are still pinned, no worry). Bump it when you change the fields within
@@ -698,6 +698,11 @@ export class Project {
       return hooks.reduceVariantParameterComparators;
     }, {});
 
+    const cacheParameters = this.configuration.get(`cacheParameters`);
+    const cacheParameterMatrix = combineVariantMatrix(cacheParameters?.matrix ?? {}, cacheParameters?.exclude);
+
+    console.log(`Variant cache may hold up to ${cacheParameterMatrix.length} versions`);
+
     const startPackageResolution = async (locator: Locator, variantParameters: VariantParameters) => {
       const originalPkg = await miscUtils.prettifyAsyncErrors(async () => {
         return await resolver.resolve(locator, resolveOptions);
@@ -719,38 +724,63 @@ export class Project {
           ...(this.getDependencyMeta(pkg, pkg.version).parameters ?? {}),
         };
 
-        if (pkg.reference.startsWith(WorkspaceResolver.protocol))
-          throw new Error(`Assertion failed: Packages can't use variants if resolved with the workspace resolver (the package being replaced was ${structUtils.prettyLocator(this.configuration, originalPkg)})`);
-
         // Iterate over the variants, trying to find a match
         for (const potentialVariants of pkg.variants) {
-          const potentialMatch = matchVariants(potentialVariants, thisPackageVariantParameters, variantParameterComparators);
+          // The parameter combinations possible for this variant matrix
+          const possibilities = combineVariantMatrix(potentialVariants.matrix ?? {}, potentialVariants.exclude);
+          const matches = matchVariantParameters(possibilities, thisPackageVariantParameters, variantParameterComparators);
 
-          if (potentialMatch) {
-            const replacementLocator = replaceVariantLocator(locator, potentialMatch);
+          // Convert our matches into descriptors
+          const matchDescriptors = matches.map(match => {
+            const matchParameters = pkg.version ? {...match, version: pkg.version} : match;
+            return templateVariantPattern(potentialVariants.pattern, matchParameters);
+          });
 
-            const variantReplacementPackage = await miscUtils.prettifyAsyncErrors(async () => {
-              return await resolver.resolve(replacementLocator, resolveOptions);
-            }, message => {
-              return `${structUtils.prettyLocator(this.configuration, replacementLocator)}: ${message}`;
-            });
+          // Calculate the matches for the cache
+          const cacheMatches: Array<VariantParameters> = [];
+          for (const cacheParameters of cacheParameterMatrix)
+            cacheMatches.push(...matchVariantParameters(possibilities, cacheParameters, variantParameterComparators));
+          const cacheMatchDescriptors = cacheMatches.map(match => {
+            const matchParameters = pkg.version ? {...match, version: pkg.version} : match;
+            return templateVariantPattern(potentialVariants.pattern, matchParameters);
+          });
 
-            if (!structUtils.areLocatorsEqual(replacementLocator, variantReplacementPackage))
-              throw new Error(`Assertion failed: The locator cannot be changed by the resolver (went from ${structUtils.prettyLocator(this.configuration, replacementLocator)} to ${structUtils.prettyLocator(this.configuration, variantReplacementPackage)})`);
+          // For every cache match descriptor, resolve it
+          for (const matchDescriptor of cacheMatchDescriptors) {
+            try {
+              const cacheEntry = await scheduleDescriptorResolution(matchDescriptor, variantParameters);
 
-            originalPackages.set(variantReplacementPackage.locatorHash, variantReplacementPackage);
-            // register the old package? how do we delete it so we don't grab its files.
-            allPackages.set(pkg.locatorHash, pkg);
+              console.log(`A variant fetched a cache entry: ${
+                structUtils.prettyLocator(this.configuration, pkg)} -> ${
+                structUtils.prettyLocator(this.configuration, cacheEntry)}`);
+            } catch (resolveFailure) {
+              // Don't worry about it
+              console.log(`Resolve failure for cache`, resolveFailure);
+            }
+          }
 
-            const newPackage = this.configuration.normalizePackage(variantReplacementPackage);
+          // For each potential match, try and resolve it, if it succeeds, stop searching
 
-            // dependency = potentialMatch;
-            console.log(`A variant replaced a package: ${
-              structUtils.prettyLocator(this.configuration, pkg)} -> ${
-              structUtils.prettyLocator(this.configuration, variantReplacementPackage)} with environment: ${
-              JSON.stringify(thisPackageVariantParameters)}`);
+          matchLoop: for (const matchDescriptor of matchDescriptors) {
+            try {
+              const resolveAttempt = await scheduleDescriptorResolution(matchDescriptor, variantParameters);
 
-            pkg = newPackage;
+              console.log(`A variant replaced a package: ${
+                structUtils.prettyLocator(this.configuration, pkg)} -> ${
+                structUtils.prettyLocator(this.configuration, resolveAttempt)} with environment: ${
+                JSON.stringify(thisPackageVariantParameters)}`);
+
+              // TODO: How do we actually do this replacement?
+
+              allPackages.set(pkg.locatorHash, pkg); // Register the 'old' package?
+              pkg = resolveAttempt;
+
+              break matchLoop;
+            } catch (resolveFailure) {
+              // Don't worry about it
+
+              console.log(`Resolve failure`, resolveFailure);
+            }
           }
         }
       }
