@@ -5,12 +5,8 @@ describe(`variantUtils`, () => {
     it(`should combine a simple matrix`, () => {
       expect(
         variantUtils.combineVariantMatrix({
-          A: {
-            candidates: [`1`, `2`],
-          },
-          B: {
-            candidates: [`3`, `4`],
-          },
+          A: [`1`, `2`],
+          B: [`3`, `4`],
         })
       ).toMatchObject([
         {A: `1`, B: `3`},
@@ -22,12 +18,8 @@ describe(`variantUtils`, () => {
     it(`should combine a simple matrix with exclusions`, () => {
       expect(
         variantUtils.combineVariantMatrix({
-          A: {
-            candidates: [`1`, `2`],
-          },
-          B: {
-            candidates: [`3`, `4`],
-          },
+          A: [`1`, `2`],
+          B: [`3`, `4`],
         }, [
           {
             A: `1`,

@@ -29,18 +29,8 @@ export interface Variants {
     * Follows the same idea as GH Actions' matrix
     *
     * "matrix": {
-    *     "platform": {
-    *         "candidates": [
-    *             "darwin",
-    *             "win32"
-    *         ]
-    *     },
-    *     "napi": {
-    *         "candidates": [
-    *             "5",
-    *             "6"
-    *         ]
-    *     }
+    *     "platform": ["darwin", "win32"],
+    *     "napi": ["5", "6"]
     * },
     */
   matrix?: VariantMatrix
@@ -61,9 +51,7 @@ export interface VariantParameters {
 }
 
 export interface VariantMatrix {
-  [parameter: string]: {
-    candidates: Array<string>
-  }
+  [parameter: string]: Array<string>
 }
 
 export interface DependencyMeta {
