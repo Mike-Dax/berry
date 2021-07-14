@@ -704,7 +704,7 @@ export class Project {
 
     console.log(`Variant cache may hold up to ${cacheParameterMatrix.length} versions`);
 
-    const startPackageResolution = async (locator: Locator, variantParameters: VariantParameters) => {
+    const startPackageResolution = async (locator: Locator, variantParameters: VariantParameters, workspace: Workspace, pkgParent?: Package) => {
       const originalPkg = await miscUtils.prettifyAsyncErrors(async () => {
         return await resolver.resolve(locator, resolveOptions);
       }, message => {
@@ -750,7 +750,7 @@ export class Project {
           // For every cache match descriptor, resolve it
           for (const matchDescriptor of cacheMatchDescriptors) {
             try {
-              const cacheEntry = await scheduleDescriptorResolution(matchDescriptor, variantParameters);
+              const cacheEntry = await scheduleDescriptorResolution(matchDescriptor, variantParameters, workspace, pkgParent);
 
               console.log(`A variant fetched a cache entry: ${
                 structUtils.prettyLocator(this.configuration, pkg)} -> ${
@@ -765,17 +765,33 @@ export class Project {
 
           matchLoop: for (const matchDescriptor of matchDescriptors) {
             try {
-              const resolveAttempt = await scheduleDescriptorResolution(matchDescriptor, variantParameters);
+              const resolveAttempt = await scheduleDescriptorResolution(matchDescriptor, variantParameters, workspace, pkgParent);
 
               console.log(`A variant replaced a package: ${
                 structUtils.prettyLocator(this.configuration, pkg)} -> ${
                 structUtils.prettyLocator(this.configuration, resolveAttempt)} with environment: ${
-                JSON.stringify(thisPackageVariantParameters)}`);
+                JSON.stringify(thisPackageVariantParameters)}, modifying ${pkgParent?.name}'s dependency resolution to this`);
 
-              // TODO: How do we actually do this replacement?
+              if (pkgParent) {
+                // Reach up into the package that requested this and add this dependency
+                const boundNewDependency = resolver.bindDescriptor(matchDescriptor, resolveAttempt, resolveOptions);
+                pkgParent.dependencies.set(matchDescriptor.identHash, boundNewDependency);
 
-              allPackages.set(pkg.locatorHash, pkg); // Register the 'old' package?
-              pkg = resolveAttempt;
+                // then find the old dependency and remove it
+                for (const [parentDependencyIdentHash, parentDependencyDescriptor] of pkgParent.dependencies) {
+                  if (parentDependencyDescriptor.name === pkg.name && parentDependencyDescriptor.scope === pkg.scope) {
+                    pkgParent.dependencies.delete(parentDependencyIdentHash);
+                    // Remove from all descriptors, TODO: this probably isn't safe if it's used elsewhere without being a variant
+                    allDescriptors.delete(parentDependencyDescriptor.descriptorHash);
+                    allResolutions.delete(parentDependencyDescriptor.descriptorHash);
+                    break;
+                  }
+                }
+
+
+                // We'll be grabbing _this_ package's dependencies next.
+                pkg = resolveAttempt;
+              }
 
               break matchLoop;
             } catch (resolveFailure) {
@@ -811,29 +827,33 @@ export class Project {
         pkg.dependencies.set(identHash, bound);
 
         resolutionQueueNext.push(
-          scheduleDescriptorResolution(bound, variantParametersNext)
+          scheduleDescriptorResolution(bound, variantParametersNext, workspace, pkg) // This package is the parent for the next resolutions
         );
       }
 
       resolutionQueue.push(Promise.all(resolutionQueueNext));
+
+      if (pkg.name === `app-builder-bin`)
+        console.log(`about to set an allPackages locatorHash for ${pkg.name}: ${pkg.locatorHash}`);
+
 
       allPackages.set(pkg.locatorHash, pkg);
 
       return pkg;
     };
 
-    const schedulePackageResolution = async (locator: Locator, variantParameters: VariantParameters) => {
+    const schedulePackageResolution = async (locator: Locator, variantParameters: VariantParameters, workspace: Workspace, pkgParent?: Package) => {
       const promise = packageResolutionPromises.get(locator.locatorHash);
       if (typeof promise !== `undefined`)
         return promise;
 
-      const newPromise = Promise.resolve().then(() => startPackageResolution(locator, variantParameters));
+      const newPromise = Promise.resolve().then(() => startPackageResolution(locator, variantParameters, workspace, pkgParent));
       packageResolutionPromises.set(locator.locatorHash, newPromise);
       return newPromise;
     };
 
-    const startDescriptorAliasing = async (descriptor: Descriptor, alias: Descriptor, variantParameters: VariantParameters): Promise<Package> => {
-      const resolution = await scheduleDescriptorResolution(alias, variantParameters);
+    const startDescriptorAliasing = async (descriptor: Descriptor, alias: Descriptor, variantParameters: VariantParameters, workspace: Workspace, pkgParent?: Package): Promise<Package> => {
+      const resolution = await scheduleDescriptorResolution(alias, variantParameters, workspace, pkgParent);
 
       allDescriptors.set(descriptor.descriptorHash, descriptor);
       allResolutions.set(descriptor.descriptorHash, resolution.locatorHash);
@@ -841,14 +861,14 @@ export class Project {
       return resolution;
     };
 
-    const startDescriptorResolution = async (descriptor: Descriptor, variantParameters: VariantParameters): Promise<Package> => {
+    const startDescriptorResolution = async (descriptor: Descriptor, variantParameters: VariantParameters, workspace: Workspace, pkgParent?: Package): Promise<Package> => {
       const alias = this.resolutionAliases.get(descriptor.descriptorHash);
       if (typeof alias !== `undefined`)
-        return startDescriptorAliasing(descriptor, this.storedDescriptors.get(alias)!, variantParameters);
+        return startDescriptorAliasing(descriptor, this.storedDescriptors.get(alias)!, variantParameters, workspace, pkgParent);
 
       const resolutionDependencies = resolver.getResolutionDependencies(descriptor, resolveOptions);
       const resolvedDependencies = new Map(await Promise.all(resolutionDependencies.map(async dependency => {
-        return [dependency.descriptorHash, await scheduleDescriptorResolution(dependency, variantParameters)] as const;
+        return [dependency.descriptorHash, await scheduleDescriptorResolution(dependency, variantParameters, workspace, pkgParent)] as const;
       })));
 
       const candidateResolutions = await miscUtils.prettifyAsyncErrors(async () => {
@@ -864,17 +884,17 @@ export class Project {
       allDescriptors.set(descriptor.descriptorHash, descriptor);
       allResolutions.set(descriptor.descriptorHash, finalResolution.locatorHash);
 
-      return schedulePackageResolution(finalResolution, variantParameters);
+      return schedulePackageResolution(finalResolution, variantParameters, workspace, pkgParent);
     };
 
-    const scheduleDescriptorResolution = (descriptor: Descriptor, variantParameters: VariantParameters) => {
+    const scheduleDescriptorResolution = (descriptor: Descriptor, variantParameters: VariantParameters, workspace: Workspace, pkgParent?: Package) => {
       const promise = descriptorResolutionPromises.get(descriptor.descriptorHash);
       if (typeof promise !== `undefined`)
         return promise;
 
       allDescriptors.set(descriptor.descriptorHash, descriptor);
 
-      const newPromise = Promise.resolve().then(() => startDescriptorResolution(descriptor, variantParameters));
+      const newPromise = Promise.resolve().then(() => startDescriptorResolution(descriptor, variantParameters, workspace, pkgParent));
       descriptorResolutionPromises.set(descriptor.descriptorHash, newPromise);
       return newPromise;
     };
@@ -885,7 +905,7 @@ export class Project {
       }, {}, this, workspace);
 
       const workspaceDescriptor = workspace.anchoredDescriptor;
-      resolutionQueue.push(scheduleDescriptorResolution(workspaceDescriptor, startingVariantParameters));
+      resolutionQueue.push(scheduleDescriptorResolution(workspaceDescriptor, startingVariantParameters, workspace));
     }
 
     while (resolutionQueue.length > 0) {
@@ -1143,14 +1163,14 @@ export class Project {
 
           const dependency = this.storedPackages.get(resolution);
           if (typeof dependency === `undefined`)
-            throw new Error(`Assertion failed: The package (${resolution}, resolved from ${structUtils.prettyDescriptor(this.configuration, descriptor)}) should have been registered`);
+            throw new Error(`Assertion failed 1123: The package (${resolution}, resolved from ${structUtils.prettyDescriptor(this.configuration, descriptor)}) should have been registered`);
 
           const dependencyLinker = this.tryWorkspaceByLocator(dependency) === null
             ? packageLinkers.get(resolution)
             : null;
 
           if (typeof dependencyLinker === `undefined`)
-            throw new Error(`Assertion failed: The package (${resolution}, resolved from ${structUtils.prettyDescriptor(this.configuration, descriptor)}) should have been registered`);
+            throw new Error(`Assertion failed 1130: The package (${resolution}, resolved from ${structUtils.prettyDescriptor(this.configuration, descriptor)}) should have been registered`);
 
           const isWorkspaceDependency = dependencyLinker === null;
 
@@ -2018,7 +2038,7 @@ function applyVirtualResolutionMutations({
 
       const pkg = originalWorkspaceDefinitions.get(resolution) || allPackages.get(resolution);
       if (!pkg)
-        throw new Error(`Assertion failed: The package (${resolution}, resolved from ${structUtils.prettyDescriptor(project.configuration, descriptor)}) should have been registered`);
+        throw new Error(`Assertion failed 1993: The package (${resolution}, resolved from ${structUtils.prettyDescriptor(project.configuration, descriptor)}) should have been registered`);
 
       if (pkg.peerDependencies.size === 0) {
         resolvePeerDependencies(pkg, new Map(), {top, optional: isOptional});
