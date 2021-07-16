@@ -32,7 +32,6 @@ const ALWAYS_IGNORE = [
   `node_modules`,
 
   `.npmignore`,
-  `.gitignore`,
 
   `.#*`,
   `.DS_Store`,
@@ -164,8 +163,6 @@ export async function genPackList(workspace: Workspace) {
 
   for (const pattern of NEVER_IGNORE)
     globalList.accept.push(pattern);
-
-  globalList.reject.push(configuration.get(`rcFilename`));
 
   const maybeRejectPath = (path: PortablePath | null) => {
     if (path === null || !path.startsWith(`${workspace.cwd}/`))
