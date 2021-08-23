@@ -47,7 +47,7 @@ describe(`variantUtils`, () => {
           A: `1`,
         })
       ).toMatchObject(
-        {A: `1`},
+        [{A: `1`}],
       );
     });
     it(`should match parameters with extraneous ones`, () => {
@@ -64,7 +64,7 @@ describe(`variantUtils`, () => {
           C: `unused`,
         })
       ).toMatchObject(
-        {A: `1`}
+        [{A: `1`}]
       );
     });
     it(`should match parameters with custom comparators`, () => {
@@ -79,7 +79,7 @@ describe(`variantUtils`, () => {
           backwardsCompatibleParameter: (parameterValue, possiblityValue) => parseInt(parameterValue) >= parseInt(possiblityValue),
         })
       ).toMatchObject(
-        {backwardsCompatibleParameter: `3`}
+        [{backwardsCompatibleParameter: `3`}]
       );
     });
   });
