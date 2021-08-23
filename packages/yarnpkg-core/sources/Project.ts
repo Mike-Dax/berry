@@ -599,26 +599,7 @@ export class Project {
   }
 
   getDependencyMeta(ident: Ident, version: string | null): DependencyMeta {
-    const dependencyMeta = {};
-
-    const dependenciesMeta = this.topLevelWorkspace.manifest.dependenciesMeta;
-    const dependencyMetaSet = dependenciesMeta.get(structUtils.stringifyIdent(ident));
-
-    if (!dependencyMetaSet)
-      return dependencyMeta;
-
-    const defaultMeta = dependencyMetaSet.get(null);
-    if (defaultMeta)
-      Object.assign(dependencyMeta, defaultMeta);
-
-    if (version === null || !semver.valid(version))
-      return dependencyMeta;
-
-    for (const [range, meta] of dependencyMetaSet)
-      if (range !== null && range === version)
-        Object.assign(dependencyMeta, meta);
-
-    return dependencyMeta;
+    return this.topLevelWorkspace.getDependencyMeta(ident, version);
   }
 
   async findLocatorForLocation(cwd: PortablePath, {strict = false}: {strict?: boolean} = {}) {
