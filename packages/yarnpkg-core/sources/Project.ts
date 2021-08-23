@@ -704,12 +704,10 @@ export class Project {
         if (pkgParent)
           return structUtils.prettyLocator(this.configuration, pkgParent);
 
-
         const workspaceName = workspace.manifest.name;
 
         if (workspaceName)
           return structUtils.prettyIdent(this.configuration, workspaceName);
-
 
         return `workspace without name`;
       };
