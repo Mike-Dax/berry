@@ -313,12 +313,12 @@ export class Manifest {
       this.main = null;
 
     if (typeof data.variants === `object` && data.variants !== null) {
-      if (Array.isArray(data.variants))
+      if (Array.isArray(data.variants)) {
         this.variants = data.variants;
-      else
+      } else {
         this.variants = [data.variants]; // TODO: Actually parse this instead of blindly copying
-
-      console.log(`Manfiest found a variants`, this.name);
+      }
+      // console.log(`Manfiest found a variants`, this.name);
     } else {
       this.variants = null;
     }
@@ -872,6 +872,13 @@ export class Manifest {
     } else {
       delete data.bin;
     }
+
+    if (this.variants)
+      data.variants = this.variants;
+      // console.log(`we have variants for dependency ${this.name}`);
+    else
+      delete data.variants;
+
 
     if (this.workspaceDefinitions.length > 0) {
       if (this.raw.workspaces && !Array.isArray(this.raw.workspaces)) {
