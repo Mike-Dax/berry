@@ -5,11 +5,13 @@ import {Writable, Readable}                                                     
 import {PluginConfiguration, Configuration, ConfigurationDefinitionMap, PackageExtensionData} from './Configuration';
 import {Fetcher}                                                                              from './Fetcher';
 import {Linker}                                                                               from './Linker';
+import {VariantParameters}                                                                    from './Manifest';
 import {MessageName}                                                                          from './MessageName';
 import {Project, InstallOptions}                                                              from './Project';
 import {Resolver, ResolveOptions}                                                             from './Resolver';
 import {Workspace}                                                                            from './Workspace';
 import {Locator, Descriptor}                                                                  from './types';
+import {VariantParameterComparators}                                                          from './variantUtils';
 
 type ProcessEnvironment = {[key: string]: string};
 
@@ -94,6 +96,36 @@ export type Hooks = {
     initialDependency: Descriptor,
     extra: {resolver: Resolver, resolveOptions: ResolveOptions},
   ) => Promise<Descriptor>,
+
+  /**
+   * Before the resolution runs; should be used to set variant parameters based on dependencies.
+   */
+  reduceVariantParameters?: (
+    variantParameters: VariantParameters,
+    dependency: Descriptor,
+    project: Project,
+    locator: Locator,
+    initialDependency: Descriptor,
+    extra: {resolver: Resolver, resolveOptions: ResolveOptions},
+  ) => Promise<VariantParameters>,
+
+  /**
+   * Before the resolution runs; should be used to set starting variant parameters.
+   */
+  reduceVariantStartingParameters?: (
+    variantParameters: VariantParameters,
+    project: Project,
+    workspace: Workspace,
+  ) => Promise<VariantParameters>,
+
+  /**
+   * Custom comparator functions for variant parameters.
+   *
+   * For example, Node is backwards compatible with NAPI versions, they don't need to match exactly.
+   */
+  reduceVariantParameterComparators?: (
+    variantParameterComparators: VariantParameterComparators,
+  ) => Promise<VariantParameterComparators>,
 
   /**
    * Called after the `install` method from the `Project` class successfully

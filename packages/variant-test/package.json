@@ -1,0 +1,71 @@
+{
+  "name": "variant-test",
+  "version": "0.12.22",
+  "variants": [
+    {
+      "pattern": "esbuild-%platform-%arch@%version",
+      "matrix": {
+        "platform": [
+          "darwin",
+          "linux",
+          "windows"
+        ],
+        "arch": [
+          "32",
+          "64"
+        ]
+      },
+      "exclude": [
+        {
+          "platform": "darwin",
+          "arch": "32"
+        }
+      ],
+      "include": [
+        {
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "platform": "android",
+          "arch": "arm64"
+        },
+        {
+          "platform": "freebsd",
+          "arch": "64"
+        },
+        {
+          "platform": "freebsd",
+          "arch": "arm64"
+        },
+        {
+          "platform": "linux",
+          "arch": "arm"
+        },
+        {
+          "platform": "linux",
+          "arch": "arm64"
+        },
+        {
+          "platform": "linux",
+          "arch": "mips64le"
+        },
+        {
+          "platform": "linux",
+          "arch": "ppc64le"
+        },
+        {
+          "platform": "openbsd",
+          "arch": "64"
+        },
+        {
+          "platform": "windows",
+          "arch": "arm64"
+        }
+      ]
+    },
+    {
+      "pattern": "variant-fallback@%version"
+    }
+  ]
+}

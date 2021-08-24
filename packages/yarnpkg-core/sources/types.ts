@@ -1,6 +1,6 @@
-import {PortablePath}                       from '@yarnpkg/fslib';
+import {PortablePath}                                 from '@yarnpkg/fslib';
 
-import {DependencyMeta, PeerDependencyMeta} from './Manifest';
+import {DependencyMeta, PeerDependencyMeta, Variants} from './Manifest';
 
 /**
  * Unique hash of a package descriptor. Used as key in various places so that
@@ -158,7 +158,7 @@ export interface Package extends Locator {
   peerDependenciesMeta: Map<string, PeerDependencyMeta>,
 
   /**
-   * All `bin` entries  defined by the package
+   * All `bin` entries defined by the package
    *
    * While we don't need the binaries during the resolution, keeping them
    * within the lockfile is critical to make `yarn run` fast (otherwise we
@@ -167,12 +167,18 @@ export interface Package extends Locator {
    * called at every keystroke)
    */
   bin: Map<string, PortablePath>,
+
+  /**
+   * The `variants` defined by the package. Needs to be kept in the lockfile.
+   */
+  variants: Array<Variants> | null
 }
 
 export enum PackageExtensionType {
   Dependency = `Dependency`,
   PeerDependency = `PeerDependency`,
   PeerDependencyMeta = `PeerDependencyMeta`,
+  Variants = `Variants`,
 }
 
 export enum PackageExtensionStatus {
@@ -185,6 +191,7 @@ export type PackageExtension = (
   | {type: PackageExtensionType.Dependency, descriptor: Descriptor}
   | {type: PackageExtensionType.PeerDependency, descriptor: Descriptor}
   | {type: PackageExtensionType.PeerDependencyMeta, selector: string, key: keyof PeerDependencyMeta, value: any}
+  | {type: PackageExtensionType.Variants, variants: Array<Variants>}
 ) & {
   status: PackageExtensionStatus,
   userProvided: boolean,

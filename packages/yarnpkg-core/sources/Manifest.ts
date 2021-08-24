@@ -15,10 +15,62 @@ export interface WorkspaceDefinition {
   pattern: string;
 }
 
+export interface Variants {
+  /**
+   * Which package to fetch?
+   *
+   * A pattern with % delimited strings that will be replaced.
+   *
+   * prisma-build-%platform-%napi
+   */
+  pattern: string
+  /**
+    * What are the supported values?
+    * Follows the same idea as GH Actions' matrix
+    *
+    * "matrix": {
+    *     "platform": ["darwin", "win32"],
+    *     "napi": ["5", "6"]
+    * },
+    */
+  matrix?: VariantMatrix
+
+  /**
+    * Some combinations that specifically aren't supported
+    *
+    * "exclude": [{
+    *   "platform": "win32",
+    *   "napi": "5"
+    * }],
+    */
+  exclude?: Array<VariantParameters>
+
+  /**
+    * Some combinations that specifically are supported.
+    *
+    * "include": [{
+    *   "platform": "linux",
+    *   "napi": "6"
+    * }],
+    *
+    * If a combination is both included and excluded, it is included.
+    */
+  include?: Array<VariantParameters>
+}
+
+export interface VariantParameters {
+  [parameter: string]: string
+}
+
+export interface VariantMatrix {
+  [parameter: string]: Array<string>
+}
+
 export interface DependencyMeta {
   built?: boolean;
   optional?: boolean;
   unplugged?: boolean;
+  parameters?: VariantParameters
 }
 
 export interface PeerDependencyMeta {
@@ -72,6 +124,7 @@ export class Manifest {
   public peerDependenciesMeta: Map<string, PeerDependencyMeta> = new Map();
 
   public resolutions: Array<{pattern: Resolution, reference: string}> = [];
+  public variants: Array<Variants> | null = null;
 
   public files: Set<PortablePath> | null = null;
   public publishConfig: PublishConfig | null = null;
@@ -258,6 +311,17 @@ export class Manifest {
       this.main = normalizeSlashes(data.main);
     else
       this.main = null;
+
+    if (typeof data.variants === `object` && data.variants !== null) {
+      if (Array.isArray(data.variants)) {
+        this.variants = data.variants;
+      } else {
+        this.variants = [data.variants]; // TODO: Actually parse this instead of blindly copying
+      }
+      // console.log(`Manfiest found a variants`, this.name);
+    } else {
+      this.variants = null;
+    }
 
     if (typeof data.module === `string`)
       this.module = normalizeSlashes(data.module);
@@ -808,6 +872,13 @@ export class Manifest {
     } else {
       delete data.bin;
     }
+
+    if (this.variants)
+      data.variants = this.variants;
+      // console.log(`we have variants for dependency ${this.name}`);
+    else
+      delete data.variants;
+
 
     if (this.workspaceDefinitions.length > 0) {
       if (this.raw.workspaces && !Array.isArray(this.raw.workspaces)) {

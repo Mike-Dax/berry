@@ -1,14 +1,15 @@
-import {PortablePath, npath, ppath, xfs, Filename} from '@yarnpkg/fslib';
-import globby                                      from 'globby';
+import {PortablePath, npath, ppath, xfs, Filename}  from '@yarnpkg/fslib';
+import globby                                       from 'globby';
+import semver                                       from 'semver';
 
-import {HardDependencies, Manifest}                from './Manifest';
-import {Project}                                   from './Project';
-import {WorkspaceResolver}                         from './WorkspaceResolver';
-import * as hashUtils                              from './hashUtils';
-import * as semverUtils                            from './semverUtils';
-import * as structUtils                            from './structUtils';
-import {IdentHash}                                 from './types';
-import {Descriptor, Locator}                       from './types';
+import {DependencyMeta, HardDependencies, Manifest} from './Manifest';
+import {Project}                                    from './Project';
+import {WorkspaceResolver}                          from './WorkspaceResolver';
+import * as hashUtils                               from './hashUtils';
+import * as semverUtils                             from './semverUtils';
+import * as structUtils                             from './structUtils';
+import {Ident, IdentHash}                           from './types';
+import {Descriptor, Locator}                        from './types';
 
 export class Workspace {
   public readonly project: Project;
@@ -191,5 +192,28 @@ export class Workspace {
     });
 
     this.manifest.raw = data;
+  }
+
+  getDependencyMeta(ident: Ident, version: string | null): DependencyMeta {
+    const dependencyMeta = {};
+
+    const dependenciesMeta = this.manifest.dependenciesMeta;
+    const dependencyMetaSet = dependenciesMeta.get(structUtils.stringifyIdent(ident));
+
+    if (!dependencyMetaSet)
+      return dependencyMeta;
+
+    const defaultMeta = dependencyMetaSet.get(null);
+    if (defaultMeta)
+      Object.assign(dependencyMeta, defaultMeta);
+
+    if (version === null || !semver.valid(version))
+      return dependencyMeta;
+
+    for (const [range, meta] of dependencyMetaSet)
+      if (range !== null && range === version)
+        Object.assign(dependencyMeta, meta);
+
+    return dependencyMeta;
   }
 }

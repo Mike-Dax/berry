@@ -1,5 +1,5 @@
-import {Filename, PortablePath, npath, ppath, xfs}                                                      from '@yarnpkg/fslib';
 import {DEFAULT_COMPRESSION_LEVEL}                                                                      from '@yarnpkg/fslib';
+import {Filename, PortablePath, npath, ppath, xfs}                                                      from '@yarnpkg/fslib';
 import {parseSyml, stringifySyml}                                                                       from '@yarnpkg/parsers';
 import camelcase                                                                                        from 'camelcase';
 import {isCI}                                                                                           from 'ci-info';
@@ -8,13 +8,14 @@ import pLimit, {Limit}                                                          
 import {PassThrough, Writable}                                                                          from 'stream';
 
 import {CorePlugin}                                                                                     from './CorePlugin';
-import {Manifest, PeerDependencyMeta}                                                                   from './Manifest';
+import {Manifest, PeerDependencyMeta, VariantParameters, Variants}                                      from './Manifest';
 import {MultiFetcher}                                                                                   from './MultiFetcher';
 import {MultiResolver}                                                                                  from './MultiResolver';
 import {Plugin, Hooks}                                                                                  from './Plugin';
 import {ProtocolResolver}                                                                               from './ProtocolResolver';
 import {Report}                                                                                         from './Report';
 import {TelemetryManager}                                                                               from './TelemetryManager';
+import {VariantRemapResolver}                                                                           from './VariantRemapResolver';
 import {VirtualFetcher}                                                                                 from './VirtualFetcher';
 import {VirtualResolver}                                                                                from './VirtualResolver';
 import {WorkspaceFetcher}                                                                               from './WorkspaceFetcher';
@@ -26,6 +27,7 @@ import * as nodeUtils                                                           
 import * as semverUtils                                                                                 from './semverUtils';
 import * as structUtils                                                                                 from './structUtils';
 import {IdentHash, Package, Descriptor, PackageExtension, PackageExtensionType, PackageExtensionStatus} from './types';
+import {compareVariantConfiguration}                                                                    from './variantUtils';
 
 const IGNORED_ENV_VARIABLES = new Set([
   // "binFolder" is the magic location where the parent process stored the
@@ -438,6 +440,19 @@ export const coreDefinitions: {[coreSettingName: string]: SettingsDefinition} = 
     default: `throw`,
   },
 
+  /**
+   * cacheParameters:
+   *   matrix:
+   *     platform: [win32, osx]
+   *     napi: [6, 4]
+   *     js: [cjs, esm, es6, es2015, es2020]
+   */
+  cacheParameters: {
+    description: `Cache parameters for variants`,
+    type: SettingsType.ANY,
+    default: null,
+  },
+
   // Package patching - to fix incorrect definitions
   packageExtensions: {
     description: `Map of package corrections to apply on the dependency tree`,
@@ -476,6 +491,12 @@ export const coreDefinitions: {[coreSettingName: string]: SettingsDefinition} = 
               },
             },
           },
+        },
+        variants: {
+          description: `Variant information for replacing packages with different ones under certain circumstances`,
+          type: SettingsType.ANY,
+          isArray: true,
+          default: null,
         },
       },
     },
@@ -549,11 +570,20 @@ export interface ConfigurationValueMap {
   enableImmutableCache: boolean;
   checksumBehavior: string;
 
+  cacheParameters: {
+    matrix: {
+      [parameter: string]: Array<string>
+    },
+    include: Array<VariantParameters>
+    exclude: Array<VariantParameters>
+  };
+
   // Package patching - to fix incorrect definitions
   packageExtensions: Map<string, miscUtils.ToMapValue<{
     dependencies?: Map<string, string>,
     peerDependencies?: Map<string, string>,
     peerDependenciesMeta?: Map<string, miscUtils.ToMapValue<{optional?: boolean}>>,
+    variants?: Variants
   }>>;
 }
 
@@ -1389,6 +1419,7 @@ export class Configuration {
       new VirtualResolver(),
       new WorkspaceResolver(),
       new ProtocolResolver(),
+      new VariantRemapResolver(),
 
       ...pluginResolvers,
     ]);
@@ -1445,6 +1476,8 @@ export class Configuration {
         extensionsPerRange.push({...baseExtension, type: PackageExtensionType.Dependency, descriptor: dependency});
       for (const peerDependency of extension.peerDependencies.values())
         extensionsPerRange.push({...baseExtension, type: PackageExtensionType.PeerDependency, descriptor: peerDependency});
+      if (extension.variants)
+        extensionsPerRange.push({...baseExtension, type: PackageExtensionType.Variants, variants: extension.variants});
 
       for (const [selector, meta] of extension.peerDependenciesMeta) {
         for (const [key, value] of Object.entries(meta)) {
@@ -1508,6 +1541,14 @@ export class Configuration {
                 if (typeof currentPeerDependencyMeta === `undefined` || !Object.prototype.hasOwnProperty.call(currentPeerDependencyMeta, extension.key) || currentPeerDependencyMeta[extension.key] !== extension.value) {
                   extension.status = PackageExtensionStatus.Active;
                   miscUtils.getFactoryWithDefault(pkg.peerDependenciesMeta, extension.selector, () => ({} as PeerDependencyMeta))[extension.key] = extension.value;
+                }
+              } break;
+
+              case PackageExtensionType.Variants: {
+                const currentVariants = pkg.variants;
+                if (currentVariants === null || compareVariantConfiguration(currentVariants, extension.variants)) {
+                  extension.status = PackageExtensionStatus.Active;
+                  pkg.variants = extension.variants;
                 }
               } break;
 

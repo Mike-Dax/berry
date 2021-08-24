@@ -1,10 +1,12 @@
-import {MessageName}              from './MessageName';
-import {Plugin}                   from './Plugin';
-import {Project}                  from './Project';
-import {Resolver, ResolveOptions} from './Resolver';
-import {Workspace}                from './Workspace';
-import * as structUtils           from './structUtils';
-import {Descriptor, Locator}      from './types';
+import {VariantParameters}           from './Manifest';
+import {MessageName}                 from './MessageName';
+import {Plugin}                      from './Plugin';
+import {Project}                     from './Project';
+import {Resolver, ResolveOptions}    from './Resolver';
+import {Workspace}                   from './Workspace';
+import * as structUtils              from './structUtils';
+import {Descriptor, Locator}         from './types';
+import {VariantParameterComparators} from './variantUtils';
 
 export const CorePlugin: Plugin = {
   hooks: {
@@ -30,6 +32,46 @@ export const CorePlugin: Plugin = {
       }
 
       return dependency;
+    },
+
+    reduceVariantParameters: (variantParameters: VariantParameters, dependency: Descriptor, project: Project, locator: Locator, initialDependency: Descriptor, {resolver, resolveOptions}: {resolver: Resolver, resolveOptions: ResolveOptions}) => {
+      if (dependency.scope === null && dependency.name === `electron`) {
+        return {
+          ...variantParameters,
+          electron: dependency.range,
+        };
+      }
+
+      return variantParameters;
+    },
+
+    reduceVariantStartingParameters: (variantParameters: VariantParameters, project: Project, workspace: Workspace) => {
+      // TODO: What else should be there by default?
+
+      const parameters: VariantParameters = {
+        ...variantParameters,
+        platform: process.platform,
+        arch: process.arch,
+        abi: process.versions.modules,
+      };
+
+      if ((process.versions as any).napi)
+        parameters.napi = (process.versions as any).napi;
+
+      return parameters;
+    },
+
+    reduceVariantParameterComparators: (variantParameterComparators: VariantParameterComparators) => {
+      // TODO: What else should be there by default?
+
+      const parameterComparators: VariantParameterComparators = {
+        ...variantParameterComparators,
+      };
+
+      if ((process.versions as any).napi)
+        parameterComparators.napi = (parameterValue, possiblityValue) => parseInt(parameterValue) >= parseInt(possiblityValue);
+
+      return parameterComparators;
     },
 
     validateProject: async (project: Project, report: {

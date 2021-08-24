@@ -1,41 +1,44 @@
-import {PortablePath, ppath, xfs, normalizeLineEndings, Filename}       from '@yarnpkg/fslib';
-import {npath}                                                          from '@yarnpkg/fslib';
-import {parseSyml, stringifySyml}                                       from '@yarnpkg/parsers';
-import {UsageError}                                                     from 'clipanion';
-import {createHash}                                                     from 'crypto';
-import {structuredPatch}                                                from 'diff';
-import pick                                                             from 'lodash/pick';
-import pLimit                                                           from 'p-limit';
-import semver                                                           from 'semver';
-import {promisify}                                                      from 'util';
-import v8                                                               from 'v8';
-import zlib                                                             from 'zlib';
+import {PortablePath, ppath, xfs, normalizeLineEndings, Filename}              from '@yarnpkg/fslib';
+import {npath}                                                                 from '@yarnpkg/fslib';
+import {parseSyml, stringifySyml}                                              from '@yarnpkg/parsers';
+import {generatePrettyJson}                                                    from '@yarnpkg/pnp/sources/generatePrettyJson';
+import {UsageError}                                                            from 'clipanion';
+import {createHash}                                                            from 'crypto';
+import {structuredPatch}                                                       from 'diff';
+import pick                                                                    from 'lodash/pick';
+import pLimit                                                                  from 'p-limit';
+import semver                                                                  from 'semver';
+import {promisify}                                                             from 'util';
+import v8                                                                      from 'v8';
+import zlib                                                                    from 'zlib';
 
-import {Cache}                                                          from './Cache';
-import {Configuration}                                                  from './Configuration';
-import {Fetcher}                                                        from './Fetcher';
-import {Installer, BuildDirective, BuildType}                           from './Installer';
-import {LegacyMigrationResolver}                                        from './LegacyMigrationResolver';
-import {Linker}                                                         from './Linker';
-import {LockfileResolver}                                               from './LockfileResolver';
-import {DependencyMeta, Manifest}                                       from './Manifest';
-import {MessageName}                                                    from './MessageName';
-import {MultiResolver}                                                  from './MultiResolver';
-import {Report, ReportError}                                            from './Report';
-import {ResolveOptions, Resolver}                                       from './Resolver';
-import {RunInstallPleaseResolver}                                       from './RunInstallPleaseResolver';
-import {ThrowReport}                                                    from './ThrowReport';
-import {Workspace}                                                      from './Workspace';
-import {isFolderInside}                                                 from './folderUtils';
-import * as formatUtils                                                 from './formatUtils';
-import * as hashUtils                                                   from './hashUtils';
-import * as miscUtils                                                   from './miscUtils';
-import * as scriptUtils                                                 from './scriptUtils';
-import * as semverUtils                                                 from './semverUtils';
-import * as structUtils                                                 from './structUtils';
-import {IdentHash, DescriptorHash, LocatorHash, PackageExtensionStatus} from './types';
-import {Descriptor, Ident, Locator, Package}                            from './types';
-import {LinkType}                                                       from './types';
+import {Cache}                                                                 from './Cache';
+import {Configuration}                                                         from './Configuration';
+import {Fetcher}                                                               from './Fetcher';
+import {Installer, BuildDirective, BuildType}                                  from './Installer';
+import {LegacyMigrationResolver}                                               from './LegacyMigrationResolver';
+import {Linker}                                                                from './Linker';
+import {LockfileResolver}                                                      from './LockfileResolver';
+import {DependencyMeta, Manifest, VariantParameters}                           from './Manifest';
+import {MessageName}                                                           from './MessageName';
+import {MultiResolver}                                                         from './MultiResolver';
+import {Report, ReportError}                                                   from './Report';
+import {ResolveOptions, Resolver}                                              from './Resolver';
+import {RunInstallPleaseResolver}                                              from './RunInstallPleaseResolver';
+import {ThrowReport}                                                           from './ThrowReport';
+import {WorkspaceResolver}                                                     from './WorkspaceResolver';
+import {Workspace}                                                             from './Workspace';
+import {isFolderInside}                                                        from './folderUtils';
+import * as formatUtils                                                        from './formatUtils';
+import * as hashUtils                                                          from './hashUtils';
+import * as miscUtils                                                          from './miscUtils';
+import * as scriptUtils                                                        from './scriptUtils';
+import * as semverUtils                                                        from './semverUtils';
+import * as structUtils                                                        from './structUtils';
+import {IdentHash, DescriptorHash, LocatorHash, PackageExtensionStatus}        from './types';
+import {Descriptor, Ident, Locator, Package}                                   from './types';
+import {LinkType}                                                              from './types';
+import {combineVariantMatrix, matchVariantParameters,  templateVariantPattern} from './variantUtils';
 
 // When upgraded, the lockfile entries have to be resolved again (but the specific
 // versions are still pinned, no worry). Bump it when you change the fields within
@@ -312,6 +315,7 @@ export class Project {
           const peerDependenciesMeta = manifest.peerDependenciesMeta;
 
           const bin = manifest.bin;
+          const variants = manifest.variants;
 
           if (data.checksum != null) {
             const checksum = typeof cacheKey !== `undefined` && !data.checksum.includes(`/`)
@@ -322,7 +326,7 @@ export class Project {
           }
 
           if (lockfileVersion >= LOCKFILE_VERSION) {
-            const pkg: Package = {...locator, version, languageName, linkType, dependencies, peerDependencies, dependenciesMeta, peerDependenciesMeta, bin};
+            const pkg: Package = {...locator, version, languageName, linkType, dependencies, peerDependencies, dependenciesMeta, peerDependenciesMeta, bin, variants};
             this.originalPackages.set(pkg.locatorHash, pkg);
           }
 
@@ -596,26 +600,7 @@ export class Project {
   }
 
   getDependencyMeta(ident: Ident, version: string | null): DependencyMeta {
-    const dependencyMeta = {};
-
-    const dependenciesMeta = this.topLevelWorkspace.manifest.dependenciesMeta;
-    const dependencyMetaSet = dependenciesMeta.get(structUtils.stringifyIdent(ident));
-
-    if (!dependencyMetaSet)
-      return dependencyMeta;
-
-    const defaultMeta = dependencyMetaSet.get(null);
-    if (defaultMeta)
-      Object.assign(dependencyMeta, defaultMeta);
-
-    if (version === null || !semver.valid(version))
-      return dependencyMeta;
-
-    for (const [range, meta] of dependencyMetaSet)
-      if (range !== null && range === version)
-        Object.assign(dependencyMeta, meta);
-
-    return dependencyMeta;
+    return this.topLevelWorkspace.getDependencyMeta(ident, version);
   }
 
   async findLocatorForLocation(cwd: PortablePath, {strict = false}: {strict?: boolean} = {}) {
@@ -691,7 +676,18 @@ export class Project {
 
     const resolutionQueue: Array<Promise<unknown>> = [];
 
-    const startPackageResolution = async (locator: Locator) => {
+    const variantParameterComparators = await this.configuration.reduceHook(hooks => {
+      return hooks.reduceVariantParameterComparators;
+    }, {});
+
+    const cacheParameters = this.configuration.get(`cacheParameters`);
+    const cacheParameterMatrix = combineVariantMatrix(cacheParameters?.matrix ?? {}, cacheParameters?.exclude);
+    cacheParameterMatrix.push(...(cacheParameters?.include ?? []));
+
+    if (cacheParameterMatrix.length > 0)
+      opts.report.reportInfo(MessageName.UNNAMED, `Variant cache may hold up to ${cacheParameterMatrix.length} versions`);
+
+    const startPackageResolution = async (locator: Locator, variantParameters: VariantParameters, workspace: Workspace, pkgParent?: Package) => {
       const originalPkg = await miscUtils.prettifyAsyncErrors(async () => {
         return await resolver.resolve(locator, resolveOptions);
       }, message => {
@@ -703,9 +699,166 @@ export class Project {
 
       originalPackages.set(originalPkg.locatorHash, originalPkg);
 
-      const pkg = this.configuration.normalizePackage(originalPkg);
+      let pkg = this.configuration.normalizePackage(originalPkg);
+
+      const prettyParent = () => {
+        if (pkgParent)
+          return structUtils.prettyLocator(this.configuration, pkgParent);
+
+        const workspaceName = workspace.manifest.name;
+
+        if (workspaceName)
+          return structUtils.prettyIdent(this.configuration, workspaceName);
+
+        return `workspace without name`;
+      };
+
+      if (pkg.variants) {
+        // If a package has variants, remove the descriptorResolutionPromises so that it gets re-resolved each time it's a dependency,
+        // since its resolution might be different each time.
+        descriptorResolutionPromises.delete(structUtils.convertLocatorToDescriptor(pkg).descriptorHash);
+        packageResolutionPromises.delete(locator.locatorHash);
+        opts.report.reportInfo(MessageName.UNNAMED, `detected variant dependency, ${prettyParent()}'s dependency ${structUtils.prettyLocator(this.configuration, pkg)}, not caching resolution`);
+      }
+
+      // See if we need to replace this package
+      // Only do this for packages that are dependencies, workspaces may be transformed by variants
+      // but not when they are the workspace being resolved.
+      if (pkg.variants && pkgParent) {
+        const pkgWorkspace = workspace.project.tryWorkspaceByLocator(pkg);
+
+        // The package has to have a version
+        let pkgVersion = pkg.version;
+
+        // If the package is a workspace, access the actual workspace to get the actual version in case it's 0.0.0-use-local
+        if (pkgWorkspace && pkgWorkspace.manifest.version)
+          pkgVersion = pkgWorkspace.manifest.version;
+
+        const thisPackageVariantParameters = {
+          ...variantParameters,
+          ...(this.getDependencyMeta(pkg, pkgVersion).parameters ?? {}),
+          ...(pkgVersion ? {version: pkgVersion} : {}),
+        };
+
+        // Iterate over the variants, trying to find a match
+        for (const potentialVariants of pkg.variants) {
+          // The matrix includes the package version, even if no matrix exists
+          // This provides our fallback behaviour
+          const matrix = {
+            ...potentialVariants.matrix ?? {},
+            ...(pkgVersion ? {version: [pkgVersion]} : {}),
+          };
+
+          // The parameter combinations possible for this variant matrix
+          const possibilities = combineVariantMatrix(matrix, potentialVariants.exclude);
+          possibilities.push(...(potentialVariants.include ?? []));
+          const matches = matchVariantParameters(possibilities, thisPackageVariantParameters, variantParameterComparators);
+          // variantDebug(`pattern: `, potentialVariants.pattern);
+          // variantDebug(`possibilities: `, possibilities);
+          // variantDebug(`matches:`, matches);
+
+          // Convert our matches into descriptors
+          const matchDescriptors = matches.map(match => {
+            return templateVariantPattern(potentialVariants.pattern, match);
+          });
+
+          // Calculate the matches for the cache
+          const cacheMatches: Array<VariantParameters> = [];
+
+          for (const cacheParameters of cacheParameterMatrix) {
+            const mergedCacheParameters = {
+              ...thisPackageVariantParameters,
+              ...cacheParameters,
+            };
+            cacheMatches.push(...matchVariantParameters(possibilities, mergedCacheParameters, variantParameterComparators));
+          }
+
+          const cacheMatchDescriptors = cacheMatches.map(match => {
+            const matchParameters = pkgVersion ? {...match, version: pkgVersion} : match;
+            return templateVariantPattern(potentialVariants.pattern, matchParameters);
+          });
+
+          // In parallel, schedule resolution of all our cached descriptors
+          await Promise.all(
+            cacheMatchDescriptors.map(async matchDescriptor => {
+              try {
+                const alreadyResolved = descriptorResolutionPromises.has(matchDescriptor.descriptorHash);
+                const cacheEntry = await scheduleDescriptorResolution(matchDescriptor, variantParameters, workspace, pkgParent);
+
+                if (!alreadyResolved) {
+                  opts.report.reportInfo(MessageName.UNNAMED, `Adding variant cache entry:, ${
+                    structUtils.prettyLocator(this.configuration, pkg)
+                  } -> ${
+                    structUtils.prettyLocator(this.configuration, cacheEntry)
+                  }`);
+                }
+              } catch (resolveFailure) {
+                // Don't worry about it
+                opts.report.reportError(MessageName.UNNAMED, `Resolve failure for cache, ${
+                  resolveFailure
+                }`);
+              }
+            })
+          );
+
+          // For each potential match, try and resolve it, if it succeeds, stop searching
+          matchLoop: for (const matchDescriptor of matchDescriptors) {
+            try {
+              const pkgParentOrWorkspace = pkgParent ?? workspace;
+
+              const boundMatchDescriptor = resolver.bindDescriptor(matchDescriptor, pkgParentOrWorkspace, resolveOptions);
+
+              // Find the old dependency in our parent
+              parentDependencyLoop: for (const [parentDependencyPkgIdentHash, parentDependencyPkgDescriptor] of pkgParentOrWorkspace.dependencies) {
+                if (parentDependencyPkgDescriptor.name === pkg.name && parentDependencyPkgDescriptor.scope === pkg.scope) {
+                  // Use the VariantRemapResolver
+                  const remapDescriptor = structUtils.makeDescriptor(
+                    parentDependencyPkgDescriptor,
+                    `variant:${structUtils.stringifyDescriptor(boundMatchDescriptor)}`
+                  );
+
+                  opts.report.reportInfo(MessageName.UNNAMED, `Variant replacement remap descriptor: ${structUtils.prettyDescriptor(this.configuration, remapDescriptor)}`);
+
+                  // Resolve it
+                  const resolveAttempt = await scheduleDescriptorResolution(remapDescriptor, variantParameters, workspace, pkgParent);
+
+                  // Remap the dependency to the remapDescriptor if it succeeded
+                  pkgParentOrWorkspace.dependencies.set(parentDependencyPkgIdentHash, remapDescriptor);
+
+                  opts.report.reportInfo(MessageName.UNNAMED, `Variant replacement: ${prettyParent()}'s dependency ${
+                    structUtils.prettyLocator(this.configuration, pkg)
+                  } -> ${
+                    structUtils.prettyLocator(this.configuration, resolveAttempt)
+                  }`);
+
+                  // We'll be grabbing _this_ package's dependencies next.
+                  pkg = resolveAttempt;
+
+                  opts.report.reportInfo(MessageName.UNNAMED, `Environment used: ${JSON.stringify(thisPackageVariantParameters)}`);
+
+                  break parentDependencyLoop;
+                }
+              }
+
+              break matchLoop;
+            } catch (resolveFailure) {
+              // Don't worry about it
+              opts.report.reportError(MessageName.UNNAMED, `Variant resolve failure ${resolveFailure}`);
+            }
+          }
+        }
+      }
+
+      const resolutionQueueNext: Array<Promise<unknown>> = [];
 
       for (const [identHash, descriptor] of pkg.dependencies) {
+        const variantParametersNext = await this.configuration.reduceHook(hooks => {
+          return hooks.reduceVariantParameters;
+        }, variantParameters, descriptor, this, pkg, descriptor, {
+          resolver,
+          resolveOptions,
+        });
+
         const dependency = await this.configuration.reduceHook(hooks => {
           return hooks.reduceDependency;
         }, descriptor, this, pkg, descriptor, {
@@ -718,29 +871,31 @@ export class Project {
 
         const bound = resolver.bindDescriptor(dependency, locator, resolveOptions);
         pkg.dependencies.set(identHash, bound);
+
+        resolutionQueueNext.push(
+          scheduleDescriptorResolution(bound, variantParametersNext, workspace, pkg) // This package is the parent for the next resolutions
+        );
       }
 
-      resolutionQueue.push(Promise.all([...pkg.dependencies.values()].map(descriptor => {
-        return scheduleDescriptorResolution(descriptor);
-      })));
+      resolutionQueue.push(Promise.all(resolutionQueueNext));
 
       allPackages.set(pkg.locatorHash, pkg);
 
       return pkg;
     };
 
-    const schedulePackageResolution = async (locator: Locator) => {
+    const schedulePackageResolution = async (locator: Locator, variantParameters: VariantParameters, workspace: Workspace, pkgParent?: Package) => {
       const promise = packageResolutionPromises.get(locator.locatorHash);
       if (typeof promise !== `undefined`)
         return promise;
 
-      const newPromise = Promise.resolve().then(() => startPackageResolution(locator));
+      const newPromise = Promise.resolve().then(() => startPackageResolution(locator, variantParameters, workspace, pkgParent));
       packageResolutionPromises.set(locator.locatorHash, newPromise);
       return newPromise;
     };
 
-    const startDescriptorAliasing = async (descriptor: Descriptor, alias: Descriptor): Promise<Package> => {
-      const resolution = await scheduleDescriptorResolution(alias);
+    const startDescriptorAliasing = async (descriptor: Descriptor, alias: Descriptor, variantParameters: VariantParameters, workspace: Workspace, pkgParent?: Package): Promise<Package> => {
+      const resolution = await scheduleDescriptorResolution(alias, variantParameters, workspace, pkgParent);
 
       allDescriptors.set(descriptor.descriptorHash, descriptor);
       allResolutions.set(descriptor.descriptorHash, resolution.locatorHash);
@@ -748,14 +903,14 @@ export class Project {
       return resolution;
     };
 
-    const startDescriptorResolution = async (descriptor: Descriptor): Promise<Package> => {
+    const startDescriptorResolution = async (descriptor: Descriptor, variantParameters: VariantParameters, workspace: Workspace, pkgParent?: Package): Promise<Package> => {
       const alias = this.resolutionAliases.get(descriptor.descriptorHash);
       if (typeof alias !== `undefined`)
-        return startDescriptorAliasing(descriptor, this.storedDescriptors.get(alias)!);
+        return startDescriptorAliasing(descriptor, this.storedDescriptors.get(alias)!, variantParameters, workspace, pkgParent);
 
       const resolutionDependencies = resolver.getResolutionDependencies(descriptor, resolveOptions);
       const resolvedDependencies = new Map(await Promise.all(resolutionDependencies.map(async dependency => {
-        return [dependency.descriptorHash, await scheduleDescriptorResolution(dependency)] as const;
+        return [dependency.descriptorHash, await scheduleDescriptorResolution(dependency, variantParameters, workspace, pkgParent)] as const;
       })));
 
       const candidateResolutions = await miscUtils.prettifyAsyncErrors(async () => {
@@ -771,24 +926,28 @@ export class Project {
       allDescriptors.set(descriptor.descriptorHash, descriptor);
       allResolutions.set(descriptor.descriptorHash, finalResolution.locatorHash);
 
-      return schedulePackageResolution(finalResolution);
+      return schedulePackageResolution(finalResolution, variantParameters, workspace, pkgParent);
     };
 
-    const scheduleDescriptorResolution = (descriptor: Descriptor) => {
+    const scheduleDescriptorResolution = (descriptor: Descriptor, variantParameters: VariantParameters, workspace: Workspace, pkgParent?: Package) => {
       const promise = descriptorResolutionPromises.get(descriptor.descriptorHash);
       if (typeof promise !== `undefined`)
         return promise;
 
       allDescriptors.set(descriptor.descriptorHash, descriptor);
 
-      const newPromise = Promise.resolve().then(() => startDescriptorResolution(descriptor));
+      const newPromise = Promise.resolve().then(() => startDescriptorResolution(descriptor, variantParameters, workspace, pkgParent));
       descriptorResolutionPromises.set(descriptor.descriptorHash, newPromise);
       return newPromise;
     };
 
     for (const workspace of this.workspaces) {
+      const startingVariantParameters = await this.configuration.reduceHook(hooks => {
+        return hooks.reduceVariantStartingParameters;
+      }, {}, this, workspace);
+
       const workspaceDescriptor = workspace.anchoredDescriptor;
-      resolutionQueue.push(scheduleDescriptorResolution(workspaceDescriptor));
+      resolutionQueue.push(scheduleDescriptorResolution(workspaceDescriptor, startingVariantParameters, workspace));
     }
 
     while (resolutionQueue.length > 0) {
@@ -1042,7 +1201,7 @@ export class Project {
         for (const descriptor of pkg.dependencies.values()) {
           const resolution = this.storedResolutions.get(descriptor.descriptorHash);
           if (typeof resolution === `undefined`)
-            throw new Error(`Assertion failed: The resolution (${structUtils.prettyDescriptor(this.configuration, descriptor)}, from ${structUtils.prettyLocator(this.configuration, pkg)})should have been registered`);
+            throw new Error(`Assertion failed: The resolution (${structUtils.prettyDescriptor(this.configuration, descriptor)}, from ${structUtils.prettyLocator(this.configuration, pkg)}) should have been registered`);
 
           const dependency = this.storedPackages.get(resolution);
           if (typeof dependency === `undefined`)
@@ -1499,6 +1658,7 @@ export class Project {
 
     await this.persistInstallStateFile();
 
+
     await this.configuration.triggerHook(hooks => {
       return hooks.afterAllInstalled;
     }, this, opts);
@@ -1563,6 +1723,8 @@ export class Project {
       manifest.peerDependenciesMeta = new Map(pkg.peerDependenciesMeta);
 
       manifest.bin = new Map(pkg.bin);
+      manifest.variants = pkg.variants;
+
 
       let entryChecksum: string | undefined;
       const checksum = this.storedChecksums.get(pkg.locatorHash);
@@ -1872,6 +2034,7 @@ function applyVirtualResolutionMutations({
     const thirdPass = [];
     const fourthPass = [];
 
+
     // During this first pass we virtualize the descriptors. This allows us
     // to reference them from their sibling without being order-dependent,
     // which is required to solve cases where packages with peer dependencies
@@ -1903,6 +2066,14 @@ function applyVirtualResolutionMutations({
           }
         }
       }
+
+      // if (descriptor.name === `app-builder-bin`) {
+      //    variantDebug(`Found app builder bin at 2018, ${parentPackage.name} is requiring it, its deps are:`);
+
+      //   for (const descriptor of Array.from(parentPackage.dependencies.values())) {
+      //      variantDebug(`${structUtils.prettyDescriptor(project.configuration, descriptor)} has has ${descriptor.descriptorHash}`);
+      //   }
+      // }
 
       const resolution = allResolutions.get(descriptor.descriptorHash);
       if (!resolution) {
@@ -2071,7 +2242,7 @@ function applyVirtualResolutionMutations({
               : `missing:`;
 
             if (typeof resolution === `undefined`)
-              throw new Error(`Assertion failed: Expected the resolution for ${structUtils.prettyDescriptor(project.configuration, descriptor)} to have been registered`);
+              throw new Error(`Assertion failed: Expected the resolution for ${structUtils.prettyDescriptor(project.configuration, descriptor)} to have been registered.`);
 
             return resolution === top ? `${resolution} (top)` : resolution;
           }),

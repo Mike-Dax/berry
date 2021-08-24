@@ -70,6 +70,7 @@ export class LinkResolver implements Resolver {
       peerDependenciesMeta: manifest.peerDependenciesMeta,
 
       bin: manifest.bin,
+      variants: manifest.variants,
     };
   }
 }

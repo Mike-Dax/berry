@@ -1,0 +1,37 @@
+{
+  "name": "variants",
+  "version": "1.0.0",
+  "variants": [
+    {
+      "pattern": "variants-%par1-%par2@%version",
+      "matrix": {
+        "par1": [
+          "a",
+          "b",
+          "c"
+        ],
+        "par2": [
+          1,
+          2
+        ]
+      },
+      "exclude": [
+        {
+          "par1": "c",
+          "par2": 1
+        }
+      ]
+    },
+    {
+      "pattern": "variants-%par1@%version",
+      "matrix": {
+        "par1": [
+          "d"
+        ]
+      }
+    },
+    {
+      "pattern": "variants-fallback@%version"
+    }
+  ]
+}
