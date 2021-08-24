@@ -825,14 +825,14 @@ export class Project {
                   // Remap the dependency to the remapDescriptor if it succeeded
                   pkgParentOrWorkspace.dependencies.set(parentDependencyPkgIdentHash, remapDescriptor);
 
-                  // We'll be grabbing _this_ package's dependencies next.
-                  pkg = resolveAttempt;
-
                   opts.report.reportInfo(MessageName.UNNAMED, `Variant replacement: ${prettyParent()}'s dependency ${
                     structUtils.prettyLocator(this.configuration, pkg)
                   } -> ${
                     structUtils.prettyLocator(this.configuration, resolveAttempt)
                   }`);
+
+                  // We'll be grabbing _this_ package's dependencies next.
+                  pkg = resolveAttempt;
 
                   opts.report.reportInfo(MessageName.UNNAMED, `Environment used: ${JSON.stringify(thisPackageVariantParameters)}`);
 
