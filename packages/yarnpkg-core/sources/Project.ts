@@ -717,7 +717,7 @@ export class Project {
         // resolution might be different each time.
         descriptorResolutionPromises.delete(structUtils.convertLocatorToDescriptor(pkg).descriptorHash);
         packageResolutionPromises.delete(locator.locatorHash);
-        console.log(`detected variant package, ${pkg.name}, removing from descriptorResolutionPromises and packageResolutionPromises, had parent ${prettyParent()} `);
+        console.log(`detected variant dependency, ${prettyParent()} -> ${structUtils.prettyLocator(this.configuration, pkg)}, not caching resolution`);
       }
 
       /*
@@ -733,7 +733,6 @@ export class Project {
       // but not when they are the workspace being resolved.
       if (pkg.variants && pkgParent) {
         const pkgWorkspace = workspace.project.tryWorkspaceByLocator(pkg);
-        console.log(`is this a workspace? ${workspace.project.tryWorkspaceByLocator(pkg) ? `yeah` : `nah`}`);
 
         // The package has to have a version
         let pkgVersion = pkg.version;
@@ -742,16 +741,11 @@ export class Project {
         if (pkgWorkspace && pkgWorkspace.manifest.version)
           pkgVersion = pkgWorkspace.manifest.version;
 
-
-        // TODO: Disallow workspaces from being variants
-        console.log(`variants discovered for ${pkg.name}@${pkgVersion}, locatorHash: ${originalPkg.locatorHash} with linktype ${pkg.linkType}`);
-
         const thisPackageVariantParameters = {
           ...variantParameters,
           ...(this.getDependencyMeta(pkg, pkgVersion).parameters ?? {}),
           ...(pkgVersion ? {version: pkgVersion} : {}),
         };
-
 
         // Iterate over the variants, trying to find a match
         for (const potentialVariants of pkg.variants) {
@@ -799,7 +793,7 @@ export class Project {
                 const cacheEntry = await scheduleDescriptorResolution(matchDescriptor, variantParameters, workspace, pkgParent);
 
                 if (!alreadyResolved) {
-                  console.log(`A variant fetched a cache entry: ${
+                  console.log(`Variant cache entry: ${
                     structUtils.prettyLocator(this.configuration, pkg)} -> ${
                     structUtils.prettyLocator(this.configuration, cacheEntry)}`);
                 }
@@ -813,66 +807,26 @@ export class Project {
           // For each potential match, try and resolve it, if it succeeds, stop searching
           matchLoop: for (const matchDescriptor of matchDescriptors) {
             try {
-              const resolveAttempt = await scheduleDescriptorResolution(matchDescriptor, variantParameters, workspace, pkgParent);
+              const boundMatchDescriptor = resolver.bindDescriptor(matchDescriptor, locator, resolveOptions);
 
-              console.log(`A variant replaced a package: ${
+              const resolveAttempt = await scheduleDescriptorResolution(boundMatchDescriptor, variantParameters, workspace, pkgParent);
+
+              console.log(`Variant replacement: ${prettyParent()}'s dependency ${
                 structUtils.prettyLocator(this.configuration, pkg)} -> ${
                 structUtils.prettyLocator(this.configuration, resolveAttempt)} with environment: ${
-                JSON.stringify(thisPackageVariantParameters)}, modifying ${prettyParent()}'s dependency resolution to this`
+                JSON.stringify(thisPackageVariantParameters)}`
               );
 
               const pkgParentOrWorkspace = pkgParent ?? workspace;
 
-              // Find the old dependency and remove it
+              pkgParentOrWorkspace.dependencies.set(resolveAttempt.identHash, boundMatchDescriptor);
+
+              // Find the old dependency and remove it?
               parentDependencyLoop: for (const [parentDependencyPkgIdentHash, parentDependencyPkgDescriptor] of pkgParentOrWorkspace.dependencies) {
                 if (parentDependencyPkgDescriptor.name === pkg.name && parentDependencyPkgDescriptor.scope === pkg.scope) {
                   // Reach up into the package that requested this and add this dependency
-                  // const bound = resolver.bindDescriptor(structUtils.convertLocatorToDescriptor(resolveAttempt), structUtils.convertDescriptorToLocator(parentDependencyPkgDescriptor), resolveOptions);
-                  // console.log(`reached into package parent and set bound descriptor of ${structUtils.prettyDescriptor(this.configuration, parentDependencyPkgDescriptor)} to ${structUtils.prettyDescriptor(this.configuration, bound)}`);
-                  // pkgParentOrWorkspace.dependencies.set(resolveAttempt.identHash, bound);
+                  // pkgParentOrWorkspace.dependencies.set(parentDependencyPkgIdentHash, boundMatchDescriptor);
 
-
-                  // Bind the identHash of the package to the new bound descriptor
-
-                  // // Delete the old dependency
-                  // if (pkgParentOrWorkspace.dependencies.has(parentDependencyPkgIdentHash)) {
-                  //   console.log(`Deleting old dependency ${structUtils.prettyDescriptor(this.configuration, parentDependencyPkgDescriptor)} from pkgParentOrWorkspace.dependencies`);
-                  //   console.log(`parentDependencyPkgDescriptor.descriptorHash ${parentDependencyPkgDescriptor.descriptorHash} for ${structUtils.prettyDescriptor(this.configuration, parentDependencyPkgDescriptor)}`);
-                  //   //   pkgParentOrWorkspace.dependencies.delete(parentDependencyPkgIdentHash);
-                  // }
-
-                  // if (allDescriptors.has(parentDependencyPkgDescriptor.descriptorHash)) {
-                  //   console.log(`Deleting old descriptorHash ${structUtils.prettyDescriptor(this.configuration, parentDependencyPkgDescriptor)} from allDescriptors`);
-                  //   console.log();
-                  // }
-
-                  // if (allResolutions.has(parentDependencyPkgDescriptor.descriptorHash)) {
-                  //   console.log(`Deleting old descriptorHash ${structUtils.prettyDescriptor(this.configuration, parentDependencyPkgDescriptor)} from allResolutions`);
-                  //   console.log();
-                  // }
-
-                  // if (allPackages.has(pkg.locatorHash)) {
-                  //   console.log(`Deleting old locatorHash ${structUtils.prettyLocator(this.configuration, pkg)} from allPackages`);
-                  //   console.log();
-                  // }
-
-                  // if (originalPackages.has(originalPkg.locatorHash)) {
-                  //   console.log(`originalPackages has locatorHash ${structUtils.prettyLocator(this.configuration, originalPkg)}`);
-                  //   console.log();
-                  // }
-
-
-                  // // Remove from all descriptors, TODO: this probably isn't safe if it's used elsewhere without being a variant
-                  // allDescriptors.delete(parentDependencyPkgDescriptor.descriptorHash);
-                  // allResolutions.delete(parentDependencyPkgDescriptor.descriptorHash);
-
-                  // // Delete the locator hash
-                  // allPackages.delete(pkg.locatorHash);
-
-                  // Actually try overwriting all of them, this seems to work sort of
-                  // pkgParentOrWorkspace.dependencies.set(parentDependencyPkgIdentHash, matchDescriptor);
-                  // allDescriptors.set(parentDependencyPkgDescriptor.descriptorHash, boundNewDependency);
-                  // allResolutions.set(parentDependencyPkgDescriptor.descriptorHash, resolveAttempt.locatorHash);
                   break parentDependencyLoop;
                 }
               }
@@ -883,7 +837,6 @@ export class Project {
               break matchLoop;
             } catch (resolveFailure) {
               // Don't worry about it
-
               console.log(`Resolve failure`, resolveFailure);
             }
           }
@@ -2283,7 +2236,7 @@ function applyVirtualResolutionMutations({
               : `missing:`;
 
             if (typeof resolution === `undefined`)
-              throw new Error(`Assertion failed: Expected the resolution for ${structUtils.prettyDescriptor(project.configuration, descriptor)} to have been registered`);
+              throw new Error(`Assertion failed: Expected the resolution for ${structUtils.prettyDescriptor(project.configuration, descriptor)} to have been registered. Hash: ${descriptor.descriptorHash}`);
 
             return resolution === top ? `${resolution} (top)` : resolution;
           }),
