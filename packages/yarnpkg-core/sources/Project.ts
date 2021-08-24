@@ -685,7 +685,7 @@ export class Project {
     cacheParameterMatrix.push(...(cacheParameters?.include ?? []));
 
     if (cacheParameterMatrix.length > 0)
-      console.log(`Variant cache may hold up to ${cacheParameterMatrix.length} versions`);
+      opts.report.reportInfo(MessageName.UNNAMED, `Variant cache may hold up to ${cacheParameterMatrix.length} versions`);
 
     const startPackageResolution = async (locator: Locator, variantParameters: VariantParameters, workspace: Workspace, pkgParent?: Package) => {
       const originalPkg = await miscUtils.prettifyAsyncErrors(async () => {
@@ -714,11 +714,11 @@ export class Project {
       };
 
       if (pkg.variants) {
-        // If a package has variants, remove the descriptorResolutionPromises so that it gets re-resolved each time it's a dependency, since it's
-        // resolution might be different each time.
+        // If a package has variants, remove the descriptorResolutionPromises so that it gets re-resolved each time it's a dependency,
+        // since its resolution might be different each time.
         descriptorResolutionPromises.delete(structUtils.convertLocatorToDescriptor(pkg).descriptorHash);
         packageResolutionPromises.delete(locator.locatorHash);
-        console.log(`detected variant dependency, ${prettyParent()} -> ${structUtils.prettyLocator(this.configuration, pkg)}, not caching resolution`);
+        opts.report.reportInfo(MessageName.UNNAMED, `detected variant dependency, ${prettyParent()}'s dependency ${structUtils.prettyLocator(this.configuration, pkg)}, not caching resolution`);
       }
 
       // See if we need to replace this package
@@ -753,9 +753,9 @@ export class Project {
           const possibilities = combineVariantMatrix(matrix, potentialVariants.exclude);
           possibilities.push(...(potentialVariants.include ?? []));
           const matches = matchVariantParameters(possibilities, thisPackageVariantParameters, variantParameterComparators);
-          // console.log(`pattern: `, potentialVariants.pattern);
-          // console.log(`possibilities: `, possibilities);
-          // console.log(`matches:`, matches);
+          // variantDebug(`pattern: `, potentialVariants.pattern);
+          // variantDebug(`possibilities: `, possibilities);
+          // variantDebug(`matches:`, matches);
 
           // Convert our matches into descriptors
           const matchDescriptors = matches.map(match => {
@@ -778,7 +778,7 @@ export class Project {
             return templateVariantPattern(potentialVariants.pattern, matchParameters);
           });
 
-          // In parallel, fetch all our cache entries immediately
+          // In parallel, schedule resolution of all our cached descriptors
           await Promise.all(
             cacheMatchDescriptors.map(async matchDescriptor => {
               try {
@@ -786,13 +786,17 @@ export class Project {
                 const cacheEntry = await scheduleDescriptorResolution(matchDescriptor, variantParameters, workspace, pkgParent);
 
                 if (!alreadyResolved) {
-                  console.log(`Variant cache entry: ${
-                    structUtils.prettyLocator(this.configuration, pkg)} -> ${
-                    structUtils.prettyLocator(this.configuration, cacheEntry)}`);
+                  opts.report.reportInfo(MessageName.UNNAMED, `Adding variant cache entry:, ${
+                    structUtils.prettyLocator(this.configuration, pkg)
+                  } -> ${
+                    structUtils.prettyLocator(this.configuration, cacheEntry)
+                  }`);
                 }
               } catch (resolveFailure) {
                 // Don't worry about it
-                console.log(`Resolve failure for cache`, resolveFailure);
+                opts.report.reportError(MessageName.UNNAMED, `Resolve failure for cache, ${
+                  resolveFailure
+                }`);
               }
             })
           );
@@ -800,40 +804,46 @@ export class Project {
           // For each potential match, try and resolve it, if it succeeds, stop searching
           matchLoop: for (const matchDescriptor of matchDescriptors) {
             try {
-              const boundMatchDescriptor = resolver.bindDescriptor(matchDescriptor, locator, resolveOptions);
-
-              const resolveAttempt = await scheduleDescriptorResolution(boundMatchDescriptor, variantParameters, workspace, pkgParent);
-
-              console.log(`Variant replacement: ${prettyParent()}'s dependency ${
-                structUtils.prettyLocator(this.configuration, pkg)} -> ${
-                structUtils.prettyLocator(this.configuration, resolveAttempt)}`
-              );
-              console.log(`Environment used: ${JSON.stringify(thisPackageVariantParameters)}`);
-
               const pkgParentOrWorkspace = pkgParent ?? workspace;
 
-              // Add the variant to the dependencies of the parent
-              pkgParentOrWorkspace.dependencies.set(resolveAttempt.identHash, boundMatchDescriptor);
+              const boundMatchDescriptor = resolver.bindDescriptor(matchDescriptor, pkgParentOrWorkspace, resolveOptions);
 
-              // TODO: How do we replace the old dependency with this new one?
-
-              // Find the old dependency and remove it?
+              // Find the old dependency in our parent
               parentDependencyLoop: for (const [parentDependencyPkgIdentHash, parentDependencyPkgDescriptor] of pkgParentOrWorkspace.dependencies) {
                 if (parentDependencyPkgDescriptor.name === pkg.name && parentDependencyPkgDescriptor.scope === pkg.scope) {
-                  // Reach up into the package that requested this and add this dependency
-                  // pkgParentOrWorkspace.dependencies.set(parentDependencyPkgIdentHash, boundMatchDescriptor);
+                  // Use the VariantRemapResolver
+                  const remapDescriptor = structUtils.makeDescriptor(
+                    parentDependencyPkgDescriptor,
+                    `variant:${structUtils.stringifyDescriptor(boundMatchDescriptor)}`
+                  );
+
+                  opts.report.reportInfo(MessageName.UNNAMED, `Variant replacement remap descriptor: ${structUtils.prettyDescriptor(this.configuration, remapDescriptor)}`);
+
+                  // Resolve it
+                  const resolveAttempt = await scheduleDescriptorResolution(remapDescriptor, variantParameters, workspace, pkgParent);
+
+                  // Remap the dependency to the remapDescriptor if it succeeded
+                  pkgParentOrWorkspace.dependencies.set(parentDependencyPkgIdentHash, remapDescriptor);
+
+                  // We'll be grabbing _this_ package's dependencies next.
+                  pkg = resolveAttempt;
+
+                  opts.report.reportInfo(MessageName.UNNAMED, `Variant replacement: ${prettyParent()}'s dependency ${
+                    structUtils.prettyLocator(this.configuration, pkg)
+                  } -> ${
+                    structUtils.prettyLocator(this.configuration, resolveAttempt)
+                  }`);
+
+                  opts.report.reportInfo(MessageName.UNNAMED, `Environment used: ${JSON.stringify(thisPackageVariantParameters)}`);
 
                   break parentDependencyLoop;
                 }
               }
 
-              // We'll be grabbing _this_ package's dependencies next.
-              pkg = resolveAttempt;
-
               break matchLoop;
             } catch (resolveFailure) {
               // Don't worry about it
-              console.log(`Resolve failure`, resolveFailure);
+              opts.report.reportError(MessageName.UNNAMED, `Variant resolve failure ${resolveFailure}`);
             }
           }
         }
@@ -2058,10 +2068,10 @@ function applyVirtualResolutionMutations({
       }
 
       // if (descriptor.name === `app-builder-bin`) {
-      //    console.log(`Found app builder bin at 2018, ${parentPackage.name} is requiring it, its deps are:`);
+      //    variantDebug(`Found app builder bin at 2018, ${parentPackage.name} is requiring it, its deps are:`);
 
       //   for (const descriptor of Array.from(parentPackage.dependencies.values())) {
-      //      console.log(`${structUtils.prettyDescriptor(project.configuration, descriptor)} has has ${descriptor.descriptorHash}`);
+      //      variantDebug(`${structUtils.prettyDescriptor(project.configuration, descriptor)} has has ${descriptor.descriptorHash}`);
       //   }
       // }
 

@@ -1,5 +1,5 @@
-import {Filename, PortablePath, npath, ppath, xfs}                                                      from '@yarnpkg/fslib';
 import {DEFAULT_COMPRESSION_LEVEL}                                                                      from '@yarnpkg/fslib';
+import {Filename, PortablePath, npath, ppath, xfs}                                                      from '@yarnpkg/fslib';
 import {parseSyml, stringifySyml}                                                                       from '@yarnpkg/parsers';
 import camelcase                                                                                        from 'camelcase';
 import {isCI}                                                                                           from 'ci-info';
@@ -15,6 +15,7 @@ import {Plugin, Hooks}                                                          
 import {ProtocolResolver}                                                                               from './ProtocolResolver';
 import {Report}                                                                                         from './Report';
 import {TelemetryManager}                                                                               from './TelemetryManager';
+import {VariantRemapResolver}                                                                           from './VariantRemapResolver';
 import {VirtualFetcher}                                                                                 from './VirtualFetcher';
 import {VirtualResolver}                                                                                from './VirtualResolver';
 import {WorkspaceFetcher}                                                                               from './WorkspaceFetcher';
@@ -1418,6 +1419,7 @@ export class Configuration {
       new VirtualResolver(),
       new WorkspaceResolver(),
       new ProtocolResolver(),
+      new VariantRemapResolver(),
 
       ...pluginResolvers,
     ]);
