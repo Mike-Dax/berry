@@ -1195,18 +1195,18 @@ export class Project {
         for (const descriptor of pkg.dependencies.values()) {
           const resolution = this.storedResolutions.get(descriptor.descriptorHash);
           if (typeof resolution === `undefined`)
-            throw new Error(`Assertion failed: The resolution 1155 (${structUtils.prettyDescriptor(this.configuration, descriptor)}, from ${structUtils.prettyLocator(this.configuration, pkg)})should have been registered`);
+            throw new Error(`Assertion failed: The resolution (${structUtils.prettyDescriptor(this.configuration, descriptor)}, from ${structUtils.prettyLocator(this.configuration, pkg)}) should have been registered`);
 
           const dependency = this.storedPackages.get(resolution);
           if (typeof dependency === `undefined`)
-            throw new Error(`Assertion failed 1123: The package (${resolution}, resolved from ${structUtils.prettyDescriptor(this.configuration, descriptor)}) should have been registered`);
+            throw new Error(`Assertion failed: The package (${resolution}, resolved from ${structUtils.prettyDescriptor(this.configuration, descriptor)}) should have been registered`);
 
           const dependencyLinker = this.tryWorkspaceByLocator(dependency) === null
             ? packageLinkers.get(resolution)
             : null;
 
           if (typeof dependencyLinker === `undefined`)
-            throw new Error(`Assertion failed 1130: The package (${resolution}, resolved from ${structUtils.prettyDescriptor(this.configuration, descriptor)}) should have been registered`);
+            throw new Error(`Assertion failed: The package (${resolution}, resolved from ${structUtils.prettyDescriptor(this.configuration, descriptor)}) should have been registered`);
 
           const isWorkspaceDependency = dependencyLinker === null;
 
@@ -1329,7 +1329,7 @@ export class Project {
       for (const descriptor of pkg.dependencies.values()) {
         const resolution = this.storedResolutions.get(descriptor.descriptorHash);
         if (typeof resolution === `undefined`)
-          throw new Error(`Assertion failed: The resolution 1289 (${structUtils.prettyDescriptor(this.configuration, descriptor)}) should have been registered`);
+          throw new Error(`Assertion failed: The resolution (${structUtils.prettyDescriptor(this.configuration, descriptor)}) should have been registered`);
 
         const dependency = this.storedPackages.get(resolution);
         if (typeof dependency === `undefined`)
@@ -1375,7 +1375,7 @@ export class Project {
         for (const dependency of pkg.dependencies.values()) {
           const resolution = this.storedResolutions.get(dependency.descriptorHash);
           if (!resolution)
-            throw new Error(`Assertion failed: The resolution 1335 (${structUtils.prettyDescriptor(this.configuration, dependency)}) should have been registered`);
+            throw new Error(`Assertion failed: The resolution (${structUtils.prettyDescriptor(this.configuration, dependency)}) should have been registered`);
 
           if (buildablePackages.has(resolution)) {
             isBuildable = false;
@@ -1957,7 +1957,7 @@ function applyVirtualResolutionMutations({
       if (tolerateMissingPackages) {
         return [locatorHash, null];
       } else {
-        throw new Error(`Assertion failed: The workspace should have an associated package - ${locatorHash}`);
+        throw new Error(`Assertion failed: The workspace should have an associated package`);
       }
     }
 
@@ -1983,7 +1983,7 @@ function applyVirtualResolutionMutations({
   const getPackageFromDescriptor = (descriptor: Descriptor): Package => {
     const resolution = allResolutions.get(descriptor.descriptorHash);
     if (typeof resolution === `undefined`)
-      throw new Error(`Assertion failed: The resolution 1938 should have been registered`);
+      throw new Error(`Assertion failed: The resolution should have been registered`);
 
     const pkg = allPackages.get(resolution);
     if (!pkg)
@@ -2079,13 +2079,13 @@ function applyVirtualResolutionMutations({
         if (tolerateMissingPackages) {
           continue;
         } else {
-          throw new Error(`Assertion failed: The resolution 2025 (${structUtils.prettyDescriptor(project.configuration, descriptor)}) should have been registered`);
+          throw new Error(`Assertion failed: The resolution (${structUtils.prettyDescriptor(project.configuration, descriptor)}) should have been registered`);
         }
       }
 
       const pkg = originalWorkspaceDefinitions.get(resolution) || allPackages.get(resolution);
       if (!pkg)
-        throw new Error(`Assertion failed 1993: The package (${resolution}, resolved from ${structUtils.prettyDescriptor(project.configuration, descriptor)}) should have been registered`);
+        throw new Error(`Assertion failed: The package (${resolution}, resolved from ${structUtils.prettyDescriptor(project.configuration, descriptor)}) should have been registered`);
 
       if (pkg.peerDependencies.size === 0) {
         resolvePeerDependencies(pkg, new Map(), {top, optional: isOptional});
@@ -2236,7 +2236,7 @@ function applyVirtualResolutionMutations({
               : `missing:`;
 
             if (typeof resolution === `undefined`)
-              throw new Error(`Assertion failed: Expected the resolution for ${structUtils.prettyDescriptor(project.configuration, descriptor)} to have been registered. Hash: ${descriptor.descriptorHash}`);
+              throw new Error(`Assertion failed: Expected the resolution for ${structUtils.prettyDescriptor(project.configuration, descriptor)} to have been registered.`);
 
             return resolution === top ? `${resolution} (top)` : resolution;
           }),
