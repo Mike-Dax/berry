@@ -65,7 +65,7 @@
       ]
     },
     {
-      "pattern": "esbuild-openbsd-64@%version"
+      "pattern": "variant-fallback@%version"
     }
   ]
 }
