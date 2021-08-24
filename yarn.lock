@@ -5283,6 +5283,7 @@ __metadata:
     tslib: ^1.13.0
     typanion: ^3.3.0
     typescript: ^4.3.2
+    variant-test: "workspace:*"
     yup: ^0.32.9
   peerDependencies:
     "@yarnpkg/core": ^3.1.0-rc.2
@@ -26515,6 +26516,47 @@ typescript@^4.3.2:
   checksum: 3f255d288ba25c4021cb88f319c3a8fe147d1cbc9a4a3b70c795c1a6225d126959b1709d3b4d357745ceb4812f644218de02907ad4934023ca0be2db7e194f86
   languageName: node
   linkType: hard
+
+"variant-test@workspace:*, variant-test@workspace:packages/variant-test":
+  version: 0.0.0-use.local
+  resolution: "variant-test@workspace:packages/variant-test"
+  languageName: unknown
+  linkType: soft
+  variants:
+    - exclude:
+        - arch: 32
+          platform: darwin
+      include:
+        - arch: arm64
+          platform: darwin
+        - arch: arm64
+          platform: android
+        - arch: 64
+          platform: freebsd
+        - arch: arm64
+          platform: freebsd
+        - arch: arm
+          platform: linux
+        - arch: arm64
+          platform: linux
+        - arch: mips64le
+          platform: linux
+        - arch: ppc64le
+          platform: linux
+        - arch: 64
+          platform: openbsd
+        - arch: arm64
+          platform: windows
+      matrix:
+        arch:
+          - 32
+          - 64
+        platform:
+          - darwin
+          - linux
+          - windows
+      pattern: esbuild-%platform-%arch@%version
+    - pattern: esbuild-openbsd-64@%version
 
 "vary@npm:^1, vary@npm:~1.1.2":
   version: 1.1.2

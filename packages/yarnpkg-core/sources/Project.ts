@@ -1,6 +1,7 @@
-import {npath}                                                                 from '@yarnpkg/fslib';
 import {PortablePath, ppath, xfs, normalizeLineEndings, Filename}              from '@yarnpkg/fslib';
+import {npath}                                                                 from '@yarnpkg/fslib';
 import {parseSyml, stringifySyml}                                              from '@yarnpkg/parsers';
+import {generatePrettyJson}                                                    from '@yarnpkg/pnp/sources/generatePrettyJson';
 import {UsageError}                                                            from 'clipanion';
 import {createHash}                                                            from 'crypto';
 import {structuredPatch}                                                       from 'diff';
@@ -34,9 +35,9 @@ import * as miscUtils                                                          f
 import * as scriptUtils                                                        from './scriptUtils';
 import * as semverUtils                                                        from './semverUtils';
 import * as structUtils                                                        from './structUtils';
-import {LinkType}                                                              from './types';
-import {Descriptor, Ident, Locator, Package}                                   from './types';
 import {IdentHash, DescriptorHash, LocatorHash, PackageExtensionStatus}        from './types';
+import {Descriptor, Ident, Locator, Package}                                   from './types';
+import {LinkType}                                                              from './types';
 import {combineVariantMatrix, matchVariantParameters,  templateVariantPattern} from './variantUtils';
 
 // When upgraded, the lockfile entries have to be resolved again (but the specific
@@ -720,14 +721,6 @@ export class Project {
         console.log(`detected variant dependency, ${prettyParent()} -> ${structUtils.prettyLocator(this.configuration, pkg)}, not caching resolution`);
       }
 
-      /*
-          // Workspaces have 0.0.0-use.local in their "pkg" registrations, so we
-    // need to access the actual workspace to get its real version.
-    const workspace = project.tryWorkspaceByLocator(locator);
-
-      */
-
-
       // See if we need to replace this package
       // Only do this for packages that are dependencies, workspaces may be transformed by variants
       // but not when they are the workspace being resolved.
@@ -813,13 +806,16 @@ export class Project {
 
               console.log(`Variant replacement: ${prettyParent()}'s dependency ${
                 structUtils.prettyLocator(this.configuration, pkg)} -> ${
-                structUtils.prettyLocator(this.configuration, resolveAttempt)} with environment: ${
-                JSON.stringify(thisPackageVariantParameters)}`
+                structUtils.prettyLocator(this.configuration, resolveAttempt)}`
               );
+              console.log(`Environment used: ${JSON.stringify(thisPackageVariantParameters)}`);
 
               const pkgParentOrWorkspace = pkgParent ?? workspace;
 
+              // Add the variant to the dependencies of the parent
               pkgParentOrWorkspace.dependencies.set(resolveAttempt.identHash, boundMatchDescriptor);
+
+              // TODO: How do we replace the old dependency with this new one?
 
               // Find the old dependency and remove it?
               parentDependencyLoop: for (const [parentDependencyPkgIdentHash, parentDependencyPkgDescriptor] of pkgParentOrWorkspace.dependencies) {
