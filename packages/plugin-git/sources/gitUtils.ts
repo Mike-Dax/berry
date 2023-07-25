@@ -266,6 +266,21 @@ export async function clone(url: string, configuration: Configuration) {
   });
 }
 
+export async function fetchShortHeadHash(root: PortablePath) {
+  const {stdout: mergeBaseStdout} = await execUtils.execvp(`git`, [`rev-parse`, `--short`, `HEAD`], {cwd: root, strict: true});
+  const hash = mergeBaseStdout.trim();
+
+  return hash;
+}
+
+export async function fetchShortHashLastChanged(root: PortablePath, workspaceCwd: PortablePath) {
+  // Get the short sha of the last commit that modified a workspace
+  const {stdout: mergeBaseStdout} = await execUtils.execvp(`git`, [`log`, `-n`, `1`, `--pretty=format:%h`, `--`, workspaceCwd], {cwd: root, strict: true});
+  const hash = mergeBaseStdout.trim();
+
+  return hash;
+}
+
 export async function fetchRoot(initialCwd: PortablePath) {
   // Note: We can't just use `git rev-parse --show-toplevel`, because on Windows
   // it may return long paths even when the cwd uses short paths, and we have no
